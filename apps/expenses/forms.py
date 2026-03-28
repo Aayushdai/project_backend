@@ -1,8 +1,8 @@
 from django import forms
-from  .models import Expenses
+from .models import Expense
 class ExpenseForm(forms.ModelForm):
     class Meta:
-        model = Expenses
+        model = Expense
         fields = ['description','amount', 'paid_by','split_among']
         widgets = {
             'description' :forms.TextInput(attrs={'placeholder' : 'e.g Lunch in Pokhara'}),

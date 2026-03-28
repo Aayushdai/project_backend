@@ -1,27 +1,34 @@
 from django.contrib import admin
-from .models import Trip
-from .models import City, ItineraryItem,Destination
+from .models import Trip, City, ItineraryItem, Destination
 
-admin.site.register(City)
+
+@admin.register(City)
 class CityAdmin(admin.ModelAdmin):
     list_display = ('id', 'name', 'country')
     search_fields = ('name',)
-admin.site.register(ItineraryItem)
+
+
+@admin.register(ItineraryItem)
 class ItineraryItemAdmin(admin.ModelAdmin):
-    list_display = ("trip", "name", "date", "description")
-    search_fields = ("name", "trip__title")
+    list_display = ("trip", "day", "activity", "notes")
+    search_fields = ("activity", "trip__title")
+
 
 @admin.register(Destination)
 class DestinationAdmin(admin.ModelAdmin):
-    list_display = ('id', 'name', 'country', 'city')
-    list_filter = ('city', 'country')
-    search_fields = ('name', 'city__name')
+    list_display = ('id', 'name', 'city', 'get_country')
+    list_filter = ('city',)
+    search_fields = ('name', 'city__name', 'city__country')
+
+    def get_country(self, obj):
+        return obj.city.country
+
+    get_country.short_description = 'Country'
+
 
 @admin.register(Trip)
-
 class TripAdmin(admin.ModelAdmin):
     list_display = ("title", "creator", "destination", "start_date", "end_date")
     search_fields = ("title", "creator__username")
     list_filter = ("destination", "start_date")
     ordering = ("-start_date",)
-# Register your models here.

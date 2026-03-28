@@ -1,61 +1,96 @@
-# from django.contrib import admin
-# from .models import UserProfile
-
-# admin.site.register(UserProfile)
-# # Register your models here.
-# Instead of admin.ModelAdmin
-# users/admin.py
-# from unfold.admin import ModelAdmin  # ← change here
-# from django.contrib import admin
-# from .models import UserProfile, Match
-
-# @admin.register(UserProfile)
-# class UserProfileAdmin(ModelAdmin):
-#     list_display = ["user", "location", "travel_style", "budget_level", "adventure_level"]
-#     list_filter = ["travel_style", "pace", "budget_level", "adventure_level"]
-#     search_fields = ["user__username", "bio", "location"]
-#     # add fieldsets, inlines, etc. as usual
-
-# @admin.register(Match)
-# class MatchAdmin(ModelAdmin):
-#     list_display = ["user1", "user2", "similarity_score", "status", "created_at"]
-#     list_filter = ["status"]
-#     search_fields = ["user1__username", "user2__username"]
 from django.contrib import admin
-from django.contrib.auth.models import User
 from django.utils.html import format_html
-from django.contrib.auth.models import Group
-from .models import UserLoginHistory
+from .models import UserProfile, Match, UserLoginHistory
+
+
+@admin.register(UserProfile)
+class UserProfileAdmin(admin.ModelAdmin):
+    list_display  = ('user', 'full_name', 'email', 'status_badge', 'phone', 'country', 'created_at')
+    list_filter   = ('status',)
+    search_fields = ('user__username', 'user__email', 'user__first_name', 'user__last_name', 'phone')
+    readonly_fields = ('preview_profile_photo', 'preview_passport_photo', 'created_at')
+    actions = ['approve_users', 'reject_users']
+
+    fieldsets = (
+        ('👤 Account', {
+            'fields': ('user', 'status', 'rejection_reason')
+        }),
+        ('📸 Photos', {
+            'fields': ('preview_profile_photo', 'profile_picture', 'preview_passport_photo', 'passport_photo')
+        }),
+        ('📋 Personal Info', {
+            'fields': ('dob', 'gender', 'citizenship', 'passport_no', 'passport_expiry')
+        }),
+        ('📬 Contact', {
+            'fields': ('phone', 'address', 'city', 'country', 'zip_code')
+        }),
+        ('✈️ Travel Preferences', {
+            'fields': ('bio', 'location', 'travel_style', 'pace', 'accomodation_preference',
+                       'budget_level', 'adventure_level', 'social_level')
+        }),
+    )
+
+    def full_name(self, obj):
+        return f"{obj.user.first_name} {obj.user.last_name}".strip() or "—"
+    full_name.short_description = "Name"
+
+    def email(self, obj):
+        return obj.user.email
+    email.short_description = "Email"
+
+    def created_at(self, obj):
+        return obj.user.date_joined.strftime("%b %d, %Y")
+    created_at.short_description = "Registered"
+
+    def status_badge(self, obj):
+        colors = {
+            'pending':  ('#f59e0b', '⏳'),
+            'approved': ('#10b981', '✅'),
+            'rejected': ('#ef4444', '❌'),
+        }
+        color, icon = colors.get(obj.status, ('#6b7280', '?'))
+        return format_html(
+            '<span style="color:{};font-weight:bold">{} {}</span>',
+            color, icon, obj.get_status_display()
+        )
+    status_badge.short_description = "Status"
+
+    def preview_profile_photo(self, obj):
+        if obj.profile_picture:
+            return format_html(
+                '<img src="{}" style="height:120px;width:120px;object-fit:cover;border-radius:50%;border:2px solid #ccc" />',
+                obj.profile_picture.url
+            )
+        return "No photo uploaded"
+    preview_profile_photo.short_description = "Profile Photo Preview"
+
+    def preview_passport_photo(self, obj):
+        if obj.passport_photo:
+            return format_html(
+                '<img src="{}" style="height:160px;max-width:280px;object-fit:cover;border-radius:8px;border:2px solid #ccc" />',
+                obj.passport_photo.url
+            )
+        return "No passport photo uploaded"
+    preview_passport_photo.short_description = "Passport Photo Preview"
+
+    @admin.action(description="✅ Approve selected users")
+    def approve_users(self, request, queryset):
+        updated = queryset.update(status='approved')
+        self.message_user(request, f"{updated} user(s) approved successfully.")
+
+    @admin.action(description="❌ Reject selected users")
+    def reject_users(self, request, queryset):
+        updated = queryset.update(status='rejected')
+        self.message_user(request, f"{updated} user(s) rejected.")
+
+
+@admin.register(Match)
+class MatchAdmin(admin.ModelAdmin):
+    list_display = ('user1', 'user2', 'similarity_score', 'status', 'created_at')
+    list_filter  = ('status',)
 
 
 @admin.register(UserLoginHistory)
 class UserLoginHistoryAdmin(admin.ModelAdmin):
-    list_display = ("user", "login_time", "ip_address")  # Columns shown in admin
-    list_filter = ("login_time", "user")                 # Filters for easier tracking
-    search_fields = ("user__username", "ip_address")    
-class UserAdmin(admin.ModelAdmin):
-    list_display = ('username', 'email', 'first_name', 'last_name', 'staff_status', 'superuser_status', 'is_active')
-    list_filter = ('is_staff', 'is_superuser', 'is_active')
-    search_fields = ('username', 'email', 'first_name', 'last_name')
-    ordering = ('username',)
-    list_per_page = 20
-    fieldsets = (
-        ('User Info', {'fields': ('username', 'email', 'first_name', 'last_name')}),
-        ('Permissions', {'fields': ('is_active', 'is_staff', 'is_superuser', 'groups', 'user_permissions')}),
-        ('Important dates', {'fields': ('last_login', 'date_joined')}),
-    )
-
-    def staff_status(self, obj):
-        color = "green" if obj.is_staff else "red"
-        return format_html('<b style="color:{}">{}</b>', color, obj.is_staff)
-    staff_status.short_description = 'Staff'
-
-    def superuser_status(self, obj):
-        color = "green" if obj.is_superuser else "red"
-        return format_html('<b style="color:{}">{}</b>', color, obj.is_superuser)
-    superuser_status.short_description = 'Superuser'
-
-# Unregister the default User admin
-admin.site.unregister(User)
-admin.site.register(User, UserAdmin)
-admin.site.unregister(Group)
+    list_display = ('user', 'login_time', 'ip_address')
+    readonly_fields = ('user', 'login_time', 'ip_address', 'user_agent')

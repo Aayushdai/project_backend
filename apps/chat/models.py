@@ -12,4 +12,17 @@ class Message(models.Model):
     def __str__(self):
         return f" From {self.sender} to {self.receiver} at{self.timestamp}"
 
-# Create your models here.
+
+class ChatMessage(models.Model):
+    """ChatBot conversation messages"""
+    user = models.ForeignKey(UserProfile, on_delete=models.CASCADE, related_name='chat_messages')
+    message = models.TextField()
+    response = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"{self.user.user.username} - {self.created_at}"
+

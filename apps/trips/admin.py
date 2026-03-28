@@ -19,6 +19,7 @@ class DestinationAdmin(admin.ModelAdmin):
     list_display = ('id', 'name', 'city', 'get_country')
     list_filter = ('city',)
     search_fields = ('name', 'city__name', 'city__country')
+    fields = ('name', 'description', 'location', 'city', 'image')
 
     def get_country(self, obj):
         return obj.city.country

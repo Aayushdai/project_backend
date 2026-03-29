@@ -1,5 +1,6 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from rest_framework import generics, permissions
+from rest_framework.response import Response
 from django.contrib.auth.decorators import login_required
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.generics import ListAPIView
@@ -40,8 +41,8 @@ class TripListAPIView(generics.ListCreateAPIView):
     def get_queryset(self):
         user_profile = self.request.user.userprofile
         return Trip.objects.filter(
-            Q(is_public=True) | Q(creator=user_profile)
-        ).order_by('-start_date')
+            Q(is_public=True) | Q(creator=user_profile) | Q(participants=user_profile)
+        ).distinct().order_by('-start_date')
 
     def perform_create(self, serializer):
         trip = serializer.save(creator=self.request.user.userprofile)
@@ -55,10 +56,38 @@ class TripDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
 
     def get_object(self):
         trip = super().get_object()
-        if self.request.method not in ('GET', 'HEAD', 'OPTIONS'):
+        if self.request.method not in ('GET', 'HEAD', 'OPTIONS', 'PATCH'):
             if trip.creator != self.request.user.userprofile:
                 raise PermissionDenied("You do not have permission to modify this trip.")
         return trip
+
+    def patch(self, request, *args, **kwargs):
+        trip = self.get_object()
+        action = request.data.get('action')
+        user_profile = request.user.userprofile
+
+        if action == 'join':
+            # Check if user is already a participant
+            if not trip.participants.filter(id=user_profile.id).exists():
+                trip.participants.add(user_profile)
+            # Always return the trip with current participants
+            return Response({
+                "message": "Joined trip successfully",
+                "trip": TripSerializer(trip).data
+            }, status=200)
+
+        elif action == 'leave':
+            # Only allow leaving if you're not the creator
+            if user_profile != trip.creator and trip.participants.filter(id=user_profile.id).exists():
+                trip.participants.remove(user_profile)
+            # Always return the trip with current participants
+            return Response({
+                "message": "Left trip successfully",
+                "trip": TripSerializer(trip).data
+            }, status=200)
+
+        # Default update behavior
+        return super().patch(request, *args, **kwargs)
 
 
 class CityListAPIView(generics.ListAPIView):

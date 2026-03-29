@@ -1,6 +1,28 @@
 from django.contrib import admin
 from django.utils.html import format_html
-from .models import UserProfile, Match, UserLoginHistory
+from .models import UserProfile, Match, UserLoginHistory, Interest, ConstraintTag
+
+
+@admin.register(Interest)
+class InterestAdmin(admin.ModelAdmin):
+    list_display = ('name', 'category', 'user_count')
+    list_filter = ('category',)
+    search_fields = ('name',)
+
+    def user_count(self, obj):
+        return obj.users.count()
+    user_count.short_description = "Users with this interest"
+
+
+@admin.register(ConstraintTag)
+class ConstraintTagAdmin(admin.ModelAdmin):
+    list_display = ('name', 'category', 'user_count')
+    list_filter = ('category',)
+    search_fields = ('name',)
+
+    def user_count(self, obj):
+        return obj.users.count()
+    user_count.short_description = "Users with this tag"
 
 
 @admin.register(UserProfile)
@@ -10,6 +32,7 @@ class UserProfileAdmin(admin.ModelAdmin):
     search_fields = ('user__username', 'user__email', 'user__first_name', 'user__last_name', 'phone')
     readonly_fields = ('preview_profile_photo', 'preview_passport_photo', 'created_at')
     actions = ['approve_users', 'reject_users']
+    filter_horizontal = ('interests', 'constraint_tags')
 
     fieldsets = (
         ('👤 Account', {
@@ -26,7 +49,11 @@ class UserProfileAdmin(admin.ModelAdmin):
         }),
         ('✈️ Travel Preferences', {
             'fields': ('bio', 'location', 'travel_style', 'pace', 'accomodation_preference',
-                       'budget_level', 'adventure_level', 'social_level')
+                       'budget_level', 'adventure_level', 'social_level', 'interests')
+        }),
+        ('🏷️ Matching Constraints', {
+            'fields': ('constraint_tags', 'min_match_age', 'max_match_age'),
+            'description': 'These settings ensure compatible matches. Strict tags must match for pairing.'
         }),
     )
 

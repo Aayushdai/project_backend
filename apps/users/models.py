@@ -2,6 +2,45 @@ from django.db import models
 from django.contrib.auth.models import User
 
 
+class Interest(models.Model):
+    """Travel interests/tags for cosine similarity matching (soft matching)"""
+    CATEGORY_CHOICES = [
+        ('activity', 'Activity'),
+        ('destination', 'Destination'),
+        ('experience', 'Experience'),
+    ]
+    
+    name = models.CharField(max_length=50, unique=True)
+    description = models.TextField(blank=True)
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default='activity')
+    
+    def __str__(self):
+        return self.name
+    
+    class Meta:
+        ordering = ['category', 'name']
+
+
+class ConstraintTag(models.Model):
+    """Strict matching tags (lifestyle, diet, age range, values)"""
+    CATEGORY_CHOICES = [
+        ('diet', 'Diet'),
+        ('lifestyle', 'Lifestyle'),
+        ('values', 'Values'),
+        ('age_range', 'Age Range'),
+    ]
+    
+    name = models.CharField(max_length=50)
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES)
+    description = models.TextField(blank=True)
+    
+    def __str__(self):
+        return f"{self.get_category_display()}: {self.name}"
+    
+    class Meta:
+        unique_together = ('category', 'name')
+        ordering = ['category', 'name']
+
 
 class UserProfile(models.Model):
 
@@ -58,6 +97,17 @@ class UserProfile(models.Model):
     budget_level    = models.IntegerField(default=5)
     adventure_level = models.IntegerField(default=5)
     social_level    = models.IntegerField(default=5)
+
+    # ✅ Interests (soft matching - for cosine similarity)
+    interests = models.ManyToManyField(Interest, related_name='users', blank=True)
+
+    # ✅ Constraint Tags (strict matching - must align for good match)
+    constraint_tags = models.ManyToManyField(ConstraintTag, related_name='users', blank=True, 
+                                            help_text="Diet, lifestyle, values - these must match for compatibility")
+    
+    # Age preferences for matching
+    min_match_age = models.IntegerField(default=18, help_text="Minimum age for travel companions")
+    max_match_age = models.IntegerField(default=100, help_text="Maximum age for travel companions")
 
     preference_vector = models.JSONField(null=True, blank=True)
 

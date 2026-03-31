@@ -7,6 +7,11 @@ from rest_framework_simplejwt.views import (
     TokenRefreshView,
 )
 
+# Customize Django Admin Site
+admin.site.site_header = "TCS Admin"
+admin.site.site_title = "TCS Admin"
+admin.site.index_title = "Welcome to TCS Admin"
+
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('users/', include('apps.users.urls')),

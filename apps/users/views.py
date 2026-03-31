@@ -13,6 +13,23 @@ from rest_framework.response import Response
 
 import json
 
+# ✅ Allowed email domains
+ALLOWED_EMAIL_DOMAINS = {
+    "gmail.com", "yahoo.com", "hotmail.com", "outlook.com", "protonmail.com",
+    "icloud.com", "mail.com", "yandex.com", "zoho.com", "gmx.com", "aol.com",
+    "tutanota.com", "mailbox.org", "fastmail.com", "posteo.de", "hey.com",
+}
+
+def validate_email_domain(email):
+    """Validate that email is from an allowed domain."""
+    try:
+        domain = email.split("@")[1].lower()
+        if domain not in ALLOWED_EMAIL_DOMAINS:
+            return False, f"Email domain must be one of the allowed providers (Gmail, Yahoo, Hotmail, etc.)"
+        return True, ""
+    except:
+        return False, "Invalid email format"
+
 
 @login_required
 def profile_view(request, username):
@@ -114,6 +131,11 @@ def frontend_register(request):
         if not email or not password:
             return JsonResponse({"success": False, "message": "Email and password are required"}, status=400)
 
+        # ✅ Validate email domain
+        is_valid, domain_error = validate_email_domain(email)
+        if not is_valid:
+            return JsonResponse({"success": False, "message": domain_error}, status=400)
+
         if User.objects.filter(email=email).exists():
             return JsonResponse({"success": False, "message": "Email already registered"}, status=400)
 
@@ -164,6 +186,32 @@ def frontend_register(request):
         # ✅ Auto-approve user for development (can be changed to manual approval in production)
         profile.status = 'approved'
         profile.save()
+
+        # ✅ Store security questions and answers
+        from django.contrib.auth.hashers import make_password
+        from .models import UserSecurityAnswer
+        
+        security_answers_str = data.get("security_questions", "{}")
+        try:
+            import json
+            security_answers_data = json.loads(security_answers_str) if isinstance(security_answers_str, str) else security_answers_str
+            
+            if security_answers_data:
+                # Hash the answers before storing
+                hashed_answers = {}
+                for question_id_str, answer in security_answers_data.items():
+                    # Normalize answer: strip, lowercase
+                    normalized_answer = answer.strip().lower()
+                    # Hash it
+                    hashed_answers[question_id_str] = make_password(normalized_answer)
+                
+                # Create or update UserSecurityAnswer
+                security_obj, created = UserSecurityAnswer.objects.update_or_create(
+                    user=user,
+                    defaults={"questions_answers": hashed_answers}
+                )
+        except Exception as e:
+            print(f"Error storing security questions: {e}")
 
         # ✅ Log the user in immediately
         login(request, user)
@@ -422,3 +470,132 @@ def admin_reset_password(request):
         "temporary_password": temp_password,
         "instructions": "Share this temporary password with the user. They should change it after their first login."
     })
+
+
+# ✅ ========== PASSWORD RECOVERY ENDPOINTS ==========
+
+@api_view(["GET"])
+def get_security_questions(request):
+    """Get all available security questions for password recovery"""
+    from .models import SecurityQuestion
+    questions = SecurityQuestion.objects.all().values('id', 'question', 'category')
+    return Response(list(questions))
+
+
+@csrf_exempt
+def forgot_password_step1(request):
+    """Step 1: User enters email and gets their security questions"""
+    if request.method != "POST":
+        return JsonResponse({"success": False, "message": "Only POST allowed"}, status=405)
+
+    try:
+        data = json.loads(request.body)
+        email = data.get("email", "").strip().lower()
+
+        if not email:
+            return JsonResponse({"success": False, "message": "Email is required"}, status=400)
+
+        # ✅ Validate email domain
+        is_valid, domain_error = validate_email_domain(email)
+        if not is_valid:
+            return JsonResponse({"success": False, "message": domain_error}, status=400)
+
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            return JsonResponse({"success": False, "message": "Email not found"}, status=404)
+
+        # Get user's security answers
+        try:
+            security_answers = user.security_answers
+            question_ids = list(security_answers.questions_answers.keys())
+        except:
+            return JsonResponse({
+                "success": False,
+                "message": "No security questions set. Please contact support."
+            }, status=400)
+
+        # Get the questions
+        from .models import SecurityQuestion
+        questions = SecurityQuestion.objects.filter(id__in=question_ids).values('id', 'question')
+
+        return JsonResponse({
+            "success": True,
+            "email": email,
+            "questions": list(questions),
+            "message": "Answer your security questions to reset your password"
+        })
+
+    except json.JSONDecodeError:
+        return JsonResponse({"success": False, "message": "Invalid JSON"}, status=400)
+    except Exception as e:
+        return JsonResponse({"success": False, "message": str(e)}, status=500)
+
+
+@csrf_exempt
+def forgot_password_step2(request):
+    """Step 2: Verify security answers and reset password"""
+    if request.method != "POST":
+        return JsonResponse({"success": False, "message": "Only POST allowed"}, status=405)
+
+    try:
+        data = json.loads(request.body)
+        email = data.get("email", "").strip().lower()
+        answers_provided = data.get("answers", {})  # {question_id: answer_text}
+        new_password = data.get("new_password", "")
+
+        if not email or not answers_provided or not new_password:
+            return JsonResponse({
+                "success": False,
+                "message": "Email, answers, and new password are required"
+            }, status=400)
+
+        # ✅ Validate email domain
+        is_valid, domain_error = validate_email_domain(email)
+        if not is_valid:
+            return JsonResponse({"success": False, "message": domain_error}, status=400)
+
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            return JsonResponse({"success": False, "message": "User not found"}, status=404)
+
+        # Get user's security answers
+        try:
+            security_answers = user.security_answers
+        except:
+            return JsonResponse({
+                "success": False,
+                "message": "Security answers not found"
+            }, status=400)
+
+        # Hash the provided answers and verify
+        from django.contrib.auth.hashers import check_password
+        correct_count = 0
+        total_count = len(security_answers.questions_answers)
+
+        for question_id_str, stored_hash in security_answers.questions_answers.items():
+            provided_answer = answers_provided.get(question_id_str, "").strip().lower()
+            if check_password(provided_answer, stored_hash):
+                correct_count += 1
+
+        # Require ALL answers to be correct
+        if correct_count != total_count:
+            return JsonResponse({
+                "success": False,
+                "message": f"Incorrect answers. {correct_count}/{total_count} answers were correct."
+            }, status=400)
+
+        # ✅ All answers correct - reset password
+        user.set_password(new_password)
+        user.save()
+
+        return JsonResponse({
+            "success": True,
+            "message": "Password reset successfully! Please login with your new password."
+        })
+
+    except json.JSONDecodeError:
+        return JsonResponse({"success": False, "message": "Invalid JSON"}, status=400)
+    except Exception as e:
+        return JsonResponse({"success": False, "message": str(e)}, status=500)

@@ -190,5 +190,30 @@ def find_similar_users(current_profile, limit=9, min_similarity=0.65):
     return similar[:limit]
 
 
+def calculate_user_similarity(user1_profile, user2_profile):
+    """
+    Calculate similarity score between two users (0-100%).
+    Returns a percentage score for display.
+    """
+    # Check hard constraints
+    if not check_age_compatibility(user1_profile, user2_profile):
+        return 0  # Incompatible age
+    
+    if not check_constraint_compatibility(user1_profile, user2_profile):
+        return 0  # Incompatible constraints
+    
+    # Calculate cosine similarity
+    user1_vector = user_profile_to_vector(user1_profile)
+    user2_vector = user_profile_to_vector(user2_profile)
+    
+    sim = cosine_similarity(
+        user1_vector.reshape(1, -1),
+        user2_vector.reshape(1, -1)
+    )[0][0]
+    
+    # Convert to 0-100% scale
+    return round(sim * 100, 1)
+
+
 
   

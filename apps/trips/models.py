@@ -1,5 +1,5 @@
 from django.db import models
-from apps.users.models import UserProfile
+from apps.users.models import UserProfile, ConstraintTag
 from django.core.exceptions import ValidationError
 
 
@@ -30,6 +30,7 @@ class Trip(models.Model):
     description = models.TextField()
     creator = models.ForeignKey(UserProfile, on_delete=models.CASCADE, related_name='created_trips')
     participants = models.ManyToManyField(UserProfile, related_name='joined_trips', blank=True)
+    constraint_tags = models.ManyToManyField(ConstraintTag, related_name='trips', blank=True)
     is_public = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

@@ -140,3 +140,60 @@ class UserLoginHistory(models.Model):
         return f"{self.user.username} logged in at {self.login_time}"
 
 
+# ✅ Security Questions for Password Recovery
+class SecurityQuestion(models.Model):
+    """Predefined security questions for password recovery"""
+    question = models.CharField(max_length=255, unique=True)
+    category = models.CharField(
+        max_length=50,
+        choices=[('personal', 'Personal'), ('pet', 'Pet'), ('food', 'Food'), ('travel', 'Travel'), ('other', 'Other')],
+        default='personal'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.question
+
+    class Meta:
+        ordering = ['category', 'question']
+
+
+class UserSecurityAnswer(models.Model):
+    """User's answers to security questions (for password recovery)"""
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='security_answers')
+    
+    # Store 2-3 question-answer pairs as JSON for flexibility
+    questions_answers = models.JSONField(
+        default=dict,
+        help_text="Stores question_id: answer_hash pairs"
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Security answers for {self.user.username}"
+
+
+class FriendRequest(models.Model):
+    """Friend request between two users"""
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('accepted', 'Accepted'),
+        ('rejected', 'Rejected'),
+    ]
+    
+    from_user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='friend_requests_sent')
+    to_user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='friend_requests_received')
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        unique_together = ('from_user', 'to_user')
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"{self.from_user.username} → {self.to_user.username} ({self.status})"
+
+

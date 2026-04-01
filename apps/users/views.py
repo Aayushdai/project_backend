@@ -72,24 +72,7 @@ def frontend_login(request):
     if user is None:
         return JsonResponse({"success": False, "message": "Invalid credentials"}, status=401)
 
-    # ✅ Check verification status before allowing login
-    profile = getattr(user, "userprofile", None)
-    if profile:
-        if profile.status == "pending":
-            return JsonResponse({
-                "success": False,
-                "status": "pending",
-                "message": "Your account is pending admin verification. Please check back later."
-            }, status=403)
-        if profile.status == "rejected":
-            reason = profile.rejection_reason or "Your application did not meet our requirements."
-            return JsonResponse({
-                "success": False,
-                "status": "rejected",
-                "message": f"Your account was rejected. Reason: {reason}"
-            }, status=403)
-
-    # Approved — issue JWT
+    # ✅ Allow login for all users (KYC restrictions are enforced on specific features via IsKYCApproved permission)
     refresh = RefreshToken.for_user(user)
     access  = str(refresh.access_token)
 
@@ -155,6 +138,13 @@ def frontend_register(request):
             profile = user.userprofile
         except UserProfile.DoesNotExist:
             profile = UserProfile.objects.create(user=user)
+        
+        # ✅ Create KYC profile for the user (with PENDING status)
+        from apps.kyc.models import KYCProfile
+        try:
+            kyc = user.kyc_profile
+        except:
+            KYCProfile.objects.create(user=user)
 
         # Store all registration data for admin review
         profile.status      = 'pending'
@@ -274,6 +264,19 @@ def me_view(request):
     pic = None
     if profile and profile.profile_picture:
         pic = request.build_absolute_uri(profile.profile_picture.url)
+    
+    # Get KYC status from kyc_profile if it exists and has been submitted
+    kyc_status = None
+    try:
+        kyc_profile = user.kyc_profile
+        # Only consider it submitted if it has an ID number
+        if kyc_profile.id_number:
+            kyc_status = kyc_profile.status
+        else:
+            kyc_status = 'not_submitted'
+    except:
+        kyc_status = 'not_submitted'
+    
     return Response({
         "id":          profile.id if profile else user.id,  # ✅ Return UserProfile ID, not User ID
         "user_id":     user.id,  # Also provide User ID if needed
@@ -282,6 +285,7 @@ def me_view(request):
         "last_name":   user.last_name,
         "email":       user.email,
         "date_joined": user.date_joined,
+        "status":      kyc_status,  # ✅ KYC status from kyc_profile
         "profile_picture":          pic,
         "bio":                      profile.bio                     if profile else "",
         "location":                 profile.location                if profile else "",

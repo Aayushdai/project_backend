@@ -15,7 +15,7 @@ class KYCProfileSerializer(serializers.ModelSerializer):
         model = KYCProfile
         fields = [
             'id', 'user', 'status', 'submitted_at', 'reviewed_at',
-            'full_name', 'date_of_birth', 'nationality', 'id_number',
+            'full_name', 'date_of_birth', 'nationality', 'id_number', 'id_expiry_date',
             'address', 'city', 'country',
             'id_document', 'selfie', 'proof_of_address',
             'proof_of_address_type',

@@ -1,6 +1,9 @@
 from django.contrib import admin
 from django.utils.html import format_html
+from django.utils.safestring import mark_safe
+from django.db.models import Q
 from .models import UserProfile, Match, UserLoginHistory, Interest, ConstraintTag
+from apps.kyc.models import KYCProfile, KYCStatus
 
 
 @admin.register(Interest)
@@ -27,16 +30,15 @@ class ConstraintTagAdmin(admin.ModelAdmin):
 
 @admin.register(UserProfile)
 class UserProfileAdmin(admin.ModelAdmin):
-    list_display  = ('user', 'full_name', 'email', 'status_badge', 'phone', 'country', 'created_at')
-    list_filter   = ('status',)
+    list_display  = ('user', 'full_name', 'email', 'phone', 'country', 'created_at')
+    list_filter   = ('country',)
     search_fields = ('user__username', 'user__email', 'user__first_name', 'user__last_name', 'phone')
     readonly_fields = ('preview_profile_photo', 'preview_passport_photo', 'created_at')
-    actions = ['approve_users', 'reject_users']
     filter_horizontal = ('interests', 'constraint_tags')
 
     fieldsets = (
         ('👤 Account', {
-            'fields': ('user', 'status', 'rejection_reason')
+            'fields': ('user',)
         }),
         ('📸 Photos', {
             'fields': ('preview_profile_photo', 'profile_picture', 'preview_passport_photo', 'passport_photo')
@@ -69,19 +71,6 @@ class UserProfileAdmin(admin.ModelAdmin):
         return obj.user.date_joined.strftime("%b %d, %Y")
     created_at.short_description = "Registered"
 
-    def status_badge(self, obj):
-        colors = {
-            'pending':  ('#f59e0b', '⏳'),
-            'approved': ('#10b981', '✅'),
-            'rejected': ('#ef4444', '❌'),
-        }
-        color, icon = colors.get(obj.status, ('#6b7280', '?'))
-        return format_html(
-            '<span style="color:{};font-weight:bold">{} {}</span>',
-            color, icon, obj.get_status_display()
-        )
-    status_badge.short_description = "Status"
-
     def preview_profile_photo(self, obj):
         if obj.profile_picture:
             return format_html(
@@ -100,16 +89,6 @@ class UserProfileAdmin(admin.ModelAdmin):
         return "No passport photo uploaded"
     preview_passport_photo.short_description = "Passport Photo Preview"
 
-    @admin.action(description="✅ Approve selected users")
-    def approve_users(self, request, queryset):
-        updated = queryset.update(status='approved')
-        self.message_user(request, f"{updated} user(s) approved successfully.")
-
-    @admin.action(description="❌ Reject selected users")
-    def reject_users(self, request, queryset):
-        updated = queryset.update(status='rejected')
-        self.message_user(request, f"{updated} user(s) rejected.")
-
 
 @admin.register(Match)
 class MatchAdmin(admin.ModelAdmin):
@@ -121,3 +100,137 @@ class MatchAdmin(admin.ModelAdmin):
 class UserLoginHistoryAdmin(admin.ModelAdmin):
     list_display = ('user', 'login_time', 'ip_address')
     readonly_fields = ('user', 'login_time', 'ip_address', 'user_agent')
+
+
+@admin.register(KYCProfile)
+class KYCProfileAdmin(admin.ModelAdmin):
+    list_display = ['user_display', 'status_badge', 'full_name', 'submitted_at', 'days_pending', 'action_buttons']
+    list_filter = ['status', 'submitted_at', 'nationality']
+    search_fields = ['user__email', 'user__username', 'full_name', 'id_number']
+    readonly_fields = ['submitted_at', 'reviewed_at', 'document_preview', 'user_email']
+    ordering = ['-reviewed_at', '-submitted_at']
+    date_hierarchy = 'submitted_at'
+    
+    def get_queryset(self, request):
+        """Only show KYC profiles that have been actually submitted (have ID number)"""
+        qs = super().get_queryset(request)
+        # Exclude KYC profiles with no id_number (not submitted)
+        return qs.exclude(Q(id_number__isnull=True) | Q(id_number=''))
+    
+    fieldsets = (
+        ('User Info', {
+            'fields': ('user', 'user_email', 'status')
+        }),
+        ('Personal Information', {
+            'fields': ('full_name', 'date_of_birth', 'nationality', 'id_number')
+        }),
+        ('Address Information', {
+            'fields': ('address', 'city', 'country', 'proof_of_address_type', 'proof_of_address_date')
+        }),
+        ('Documents', {
+            'fields': ('id_document', 'selfie', 'proof_of_address', 'document_preview'),
+            'description': 'View uploaded documents'
+        }),
+        ('Review Information', {
+            'fields': ('notes', 'submitted_at', 'reviewed_by', 'reviewed_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def user_display(self, obj):
+        """Display user with email link"""
+        return f"{obj.user.username} ({obj.user.email})"
+    user_display.short_description = "User"
+    
+    def status_badge(self, obj):
+        """Display status as colored badge"""
+        colors = {
+            KYCStatus.APPROVED: '#2ecc71',  # green
+            KYCStatus.REJECTED: '#e74c3c',  # red
+            KYCStatus.PENDING: '#f39c12',   # orange
+            KYCStatus.UNDER_REVIEW: '#3498db',  # blue
+        }
+        color = colors.get(obj.status, '#95a5a6')
+        return format_html(
+            '<span style="background-color: {}; color: white; padding: 5px 10px; border-radius: 4px; font-weight: bold;">{}</span>',
+            color,
+            obj.get_status_display()
+        )
+    status_badge.short_description = "Status"
+    
+    def days_pending(self, obj):
+        """Show how many days the KYC has been pending"""
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        days = (timezone.now() - obj.submitted_at).days
+        if days == 0:
+            return mark_safe('<span style="color: #e74c3c; font-weight: bold;">Today</span>')
+        elif days == 1:
+            return mark_safe('<span style="color: #e67e22;">1 day ago</span>')
+        elif days <= 3:
+            return format_html('<span style="color: #e67e22;">{} days ago</span>', days)
+        else:
+            return format_html('<span style="color: #e74c3c; font-weight: bold;">{} days ago ⚠️</span>', days)
+    days_pending.short_description = "Pending Since"
+    
+    def action_buttons(self, obj):
+        """Quick action buttons to approve/reject"""
+        if obj.status == KYCStatus.APPROVED:
+            return mark_safe('<span style="color: #27ae60; font-weight: bold;">✓ APPROVED</span>')
+        elif obj.status == KYCStatus.REJECTED:
+            return mark_safe('<span style="color: #c0392b;">✗ REJECTED</span>')
+        else:
+            return mark_safe(
+                '<a class="button" href="?status=approved" style="background-color: #27ae60;">Approve</a> '
+                '<a class="button" href="?status=rejected" style="background-color: #e74c3c;">Reject</a>'
+            )
+    action_buttons.short_description = "Quick Actions"
+    
+    def document_preview(self, obj):
+        """Preview documents inline"""
+        html = '<div style="margin: 10px 0;">'
+        
+        if obj.id_document:
+            html += f'<div style="margin-bottom: 15px;"><strong>ID Document:</strong><br>'
+            html += f'<a href="{obj.id_document.url}" target="_blank">📄 View ID Document</a></div>'
+        
+        if obj.selfie:
+            html += f'<div style="margin-bottom: 15px;"><strong>Selfie:</strong><br>'
+            html += f'<a href="{obj.selfie.url}" target="_blank">📷 View Selfie</a></div>'
+        
+        if obj.proof_of_address:
+            html += f'<div style="margin-bottom: 15px;"><strong>Proof of Address:</strong><br>'
+            html += f'<a href="{obj.proof_of_address.url}" target="_blank">🏠 View Proof of Address</a></div>'
+        
+        if not any([obj.id_document, obj.selfie, obj.proof_of_address]):
+            html += '<p style="color: #e74c3c;">No documents uploaded</p>'
+        
+        html += '</div>'
+        return mark_safe(html)
+    document_preview.short_description = "Document Preview"
+    
+    def user_email(self, obj):
+        """Display user email"""
+        return obj.user.email
+    user_email.short_description = "Email"
+    
+    actions = ['approve_kyc', 'reject_kyc', 'mark_under_review']
+    
+    def approve_kyc(self, request, queryset):
+        """Bulk approve KYC"""
+        updated = queryset.update(status=KYCStatus.APPROVED, reviewed_by=request.user)
+        self.message_user(request, f'{updated} KYC profile(s) approved.')
+    approve_kyc.short_description = "✓ Approve selected KYC"
+    
+    def reject_kyc(self, request, queryset):
+        """Bulk reject KYC"""
+        updated = queryset.update(status=KYCStatus.REJECTED, reviewed_by=request.user)
+        self.message_user(request, f'{updated} KYC profile(s) rejected.')
+    reject_kyc.short_description = "✗ Reject selected KYC"
+    
+    def mark_under_review(self, request, queryset):
+        """Mark as under review"""
+        updated = queryset.update(status=KYCStatus.UNDER_REVIEW, reviewed_by=request.user)
+        self.message_user(request, f'{updated} KYC profile(s) marked as under review.')
+    mark_under_review.short_description = "⏳ Mark as Under Review"

@@ -2,7 +2,8 @@ from django.urls import path
 from .views_api import (
     match_users, search_users, get_user_profile, calculate_similarity,
     send_friend_request, get_friend_request_status, respond_friend_request,
-    get_pending_friend_requests, cancel_friend_request, get_user_friends
+    get_pending_friend_requests, cancel_friend_request, get_user_friends,
+    kyc_submission, kyc_pending_list, KYCAdminActionView
 )
 from . import views_api
 from . import views
@@ -35,4 +36,9 @@ urlpatterns = [
     # Admin password reset endpoints
     path("api/admin/users/", views.admin_users_list, name="admin-users-list"),
     path("api/admin/reset-password/", views.admin_reset_password, name="admin-reset-password"),
+    
+    # ✅ KYC Endpoints
+    path("api/kyc/", kyc_submission, name="kyc-submission"),
+    path("api/kyc/pending/", kyc_pending_list, name="kyc-pending-list"),
+    path("api/kyc/<int:profile_id>/action/", KYCAdminActionView.as_view(), name="kyc-admin-action"),
 ]

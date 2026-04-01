@@ -14,3 +14,21 @@ class IsStaffOrReadOnly(permissions.BasePermission):
         if request.method in permissions.SAFE_METHODS:
             return True
         return request.user.is_staff
+
+
+class IsKYCApproved(permissions.BasePermission):
+    """Check if user's KYC status is approved for feature access."""
+    message = "Your KYC verification is not approved. Complete KYC to use this feature."
+    
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        
+        try:
+            kyc_profile = request.user.kyc_profile
+            if kyc_profile.status == 'approved':
+                return True
+            return False
+        except AttributeError:
+            # No KYC profile created yet
+            return False

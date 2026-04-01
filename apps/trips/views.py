@@ -10,9 +10,26 @@ from .forms import TripForm
 from .serializers import TripSerializer, DestinationSerializer, CitySerializer
 from django.http import JsonResponse
 from datetime import date
+from apps.kyc.permissions import IsKYCApproved
+
+
+def kyc_required(view_func):
+    """Decorator to check if user has approved KYC status"""
+    def wrapper(request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return redirect('login')
+        try:
+            kyc_profile = request.user.kyc_profile
+            if kyc_profile.status != 'approved':
+                return redirect('kyc_form')  # Redirect to KYC form if not approved
+        except:
+            return redirect('kyc_form')  # Redirect to KYC form if no KYC profile
+        return view_func(request, *args, **kwargs)
+    return wrapper
 
 
 @login_required
+@kyc_required
 def create_trip(request):
     if request.method == 'POST':
         form = TripForm(request.POST)
@@ -28,6 +45,7 @@ def create_trip(request):
 
 
 @login_required
+@kyc_required
 def trip_detail(request, trip_id):
     trip = get_object_or_404(Trip, id=trip_id)
     if not trip.is_public and request.user.userprofile != trip.creator:
@@ -37,7 +55,7 @@ def trip_detail(request, trip_id):
 
 class TripListAPIView(generics.ListCreateAPIView):
     serializer_class = TripSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, IsKYCApproved]
 
     def get_queryset(self):
         user_profile = self.request.user.userprofile
@@ -84,7 +102,7 @@ class TripListAPIView(generics.ListCreateAPIView):
 
 class TripDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = TripSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, IsKYCApproved]
     queryset = Trip.objects.all()
 
     def get_object(self):
@@ -153,7 +171,7 @@ class TripDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
 class TripHistoryAPIView(generics.ListAPIView):
     """Get completed/past trips for the user"""
     serializer_class = TripSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, IsKYCApproved]
 
     def get_queryset(self):
         user_profile = self.request.user.userprofile

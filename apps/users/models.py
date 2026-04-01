@@ -44,17 +44,7 @@ class ConstraintTag(models.Model):
 
 class UserProfile(models.Model):
 
-    STATUS_CHOICES = [
-        ('pending',  'Pending Verification'),
-        ('approved', 'Approved'),
-        ('rejected', 'Rejected'),
-    ]
-
     user = models.OneToOneField(User, on_delete=models.CASCADE)
-
-    # Verification
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
-    rejection_reason = models.TextField(blank=True, default='')
 
     # Basic info
     bio      = models.TextField(blank=True)
@@ -112,7 +102,11 @@ class UserProfile(models.Model):
     preference_vector = models.JSONField(null=True, blank=True)
 
     def __str__(self):
-        return f"{self.user.username} [{self.status}]"
+        # Get KYC status from related KYCProfile if it exists
+        kyc_status = "Not Started"
+        if hasattr(self.user, 'kyc_profile'):
+            kyc_status = self.user.kyc_profile.get_status_display() or self.user.kyc_profile.status
+        return f"{self.user.username} [KYC: {kyc_status}]"
 
 
 class Match(models.Model):

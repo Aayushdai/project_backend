@@ -5,7 +5,9 @@ from django.contrib.auth import get_user_model
 from .models import KYCProfile
 
 
-@receiver(post_save, sender=get_user_model())
-def create_kyc_profile(sender, instance, created, **kwargs):
-    if created:
-        KYCProfile.objects.create(user=instance)
+# Disabled: Don't auto-create empty KYC profiles
+# KYC profiles are only created when users actually submit the form
+# @receiver(post_save, sender=get_user_model())
+# def create_kyc_profile(sender, instance, created, **kwargs):
+#     if created:
+#         KYCProfile.objects.create(user=instance)

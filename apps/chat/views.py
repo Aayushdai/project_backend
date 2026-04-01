@@ -6,6 +6,7 @@ from django.db.models import Q
 from .models import ChatMessage
 from apps.users.models import UserProfile
 from apps.trips.models import City, Destination
+from apps.kyc.permissions import IsKYCApproved
 
 
 class ChatMessageSerializer(serializers.ModelSerializer):
@@ -22,7 +23,7 @@ class ChatMessageSerializer(serializers.ModelSerializer):
 
 class ChatViewSet(viewsets.ModelViewSet):
     serializer_class = ChatMessageSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsKYCApproved]
     
     def get_queryset(self):
         user_profile = UserProfile.objects.get(user=self.request.user)

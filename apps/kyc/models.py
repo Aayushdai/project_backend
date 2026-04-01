@@ -10,6 +10,30 @@ class KYCStatus(models.TextChoices):
     REJECTED = 'rejected', _('Rejected')
 
 
+class KYCProfileManager(models.Manager):
+    """Custom manager for KYCProfile with common queries."""
+    
+    def submitted(self):
+        """Get only KYC profiles that have been actually submitted (have ID/passport data)."""
+        return self.exclude(id_number__isnull=True, id_number='')
+    
+    def pending(self):
+        """Get all pending KYC profiles (for admin review)."""
+        return self.filter(status=KYCStatus.PENDING)
+    
+    def by_email(self, email):
+        """Get KYC profile by user email."""
+        return self.filter(user__email=email).first()
+    
+    def approved(self):
+        """Get all approved KYC profiles."""
+        return self.filter(status=KYCStatus.APPROVED)
+    
+    def rejected(self):
+        """Get all rejected KYC profiles."""
+        return self.filter(status=KYCStatus.REJECTED)
+
+
 class KYCProfile(models.Model):
     PROOF_CHOICES = [
         ('utility_bill', 'Utility Bill'),
@@ -51,6 +75,7 @@ class KYCProfile(models.Model):
     date_of_birth = models.DateField(null=True, blank=True)
     nationality = models.CharField(max_length=100, blank=True)
     id_number = models.CharField(max_length=100, blank=True, unique=True, null=True)
+    id_expiry_date = models.DateField(null=True, blank=True, help_text="ID/Passport expiry date")
 
     # Address
     address = models.TextField(blank=True)
@@ -64,6 +89,8 @@ class KYCProfile(models.Model):
 
     notes = models.TextField(blank=True, help_text="Admin notes or rejection reason")
 
+    objects = KYCProfileManager()
+
     class Meta:
         verbose_name = "KYC Profile"
         verbose_name_plural = "KYC Profiles"
@@ -71,3 +98,8 @@ class KYCProfile(models.Model):
 
     def __str__(self):
         return f"{self.user.email or self.user.username} - {self.status}"
+    
+    @property
+    def user_email(self):
+        """Convenience property to access user's email."""
+        return self.user.email

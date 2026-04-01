@@ -61,6 +61,7 @@ INSTALLED_APPS = [
     'apps.trips',
     'apps.chat',
     'apps.expenses',
+    'apps.kyc.apps.KycConfig',
     'apps.users.apps.UsersConfig',
 
     'core',

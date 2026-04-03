@@ -440,6 +440,43 @@ def get_user_friends(request, user_id=None):
     return Response({"friends": friends_data, "friends_count": len(friends_data)})
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def unfriend_user(request, user_id):
+    """Remove a friend from current user's friend list"""
+    try:
+        target_user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        return Response({"detail": "User not found"}, status=404)
+    
+    if target_user == request.user:
+        return Response({"detail": "Cannot unfriend yourself"}, status=400)
+    
+    # Find and delete both directions of the friendship
+    outgoing = FriendRequest.objects.filter(
+        from_user=request.user,
+        to_user=target_user,
+        status='accepted'
+    ).first()
+    
+    incoming = FriendRequest.objects.filter(
+        from_user=target_user,
+        to_user=request.user,
+        status='accepted'
+    ).first()
+    
+    if not outgoing and not incoming:
+        return Response({"detail": "Not friends with this user"}, status=400)
+    
+    # Delete both friend requests
+    if outgoing:
+        outgoing.delete()
+    if incoming:
+        incoming.delete()
+    
+    return Response({"detail": "Friend removed successfully", "status": "none"}, status=200)
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # ✅ KYC (Know Your Customer) Endpoints
 # ═══════════════════════════════════════════════════════════════════════════

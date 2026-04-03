@@ -61,10 +61,12 @@ class TripListAPIView(generics.ListCreateAPIView):
         user_profile = self.request.user.userprofile
         today = date.today()
         
-        # Get all accessible trips - exclude ended public trips unless user is involved
+        # Get all future public trips (same for all users)
+        # PLUS trips where user is creator or participant (to see their own trips)
         trips = Trip.objects.filter(
-            Q(end_date__gte=today) & (Q(is_public=True) | Q(creator=user_profile) | Q(participants=user_profile)) |
-            Q(creator=user_profile) | Q(participants=user_profile)
+            Q(end_date__gte=today, is_public=True) |  # Future public trips visible to everyone
+            Q(creator=user_profile) |                  # User's own trips (regardless of date)
+            Q(participants=user_profile)               # User's joined trips (regardless of date)
         ).distinct()
         
         # Get user's constraint tags

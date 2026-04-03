@@ -3,7 +3,7 @@ from .views_api import (
     match_users, search_users, get_user_profile, calculate_similarity,
     send_friend_request, get_friend_request_status, respond_friend_request,
     get_pending_friend_requests, cancel_friend_request, get_user_friends,
-    kyc_submission, kyc_pending_list, KYCAdminActionView
+    unfriend_user, kyc_submission, kyc_pending_list, KYCAdminActionView
 )
 from . import views_api
 from . import views
@@ -19,6 +19,7 @@ urlpatterns = [
     path("api/friend-request/status/<int:user_id>/", get_friend_request_status, name="friend-request-status"),
     path("api/friend-request/<int:request_id>/respond/", respond_friend_request, name="respond-friend-request"),
     path("api/friend-request/<int:request_id>/cancel/", cancel_friend_request, name="cancel-friend-request"),
+    path("api/unfriend/<int:user_id>/", unfriend_user, name="unfriend-user"),
     path("api/friend-requests/pending/", get_pending_friend_requests, name="pending-friend-requests"),
     path("api/friends/", get_user_friends, name="user-friends"),
     path("api/friends/<int:user_id>/", get_user_friends, name="user-friends-by-id"),

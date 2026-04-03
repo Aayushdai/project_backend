@@ -4,13 +4,18 @@ from apps.trips.models import Trip
 
 class Message(models.Model):
     sender = models.ForeignKey(UserProfile, on_delete=models.CASCADE, related_name='sent_messages')
-    receiver = models.ForeignKey(UserProfile, on_delete= models.CASCADE, related_name= 'received_messages')
+    receiver = models.ForeignKey(UserProfile, on_delete=models.CASCADE, related_name='received_messages', null=True, blank=True)
     trip = models.ForeignKey(Trip, on_delete=models.CASCADE, null=True, blank=True)
     content = models.TextField()
-    timestamp= models.DateTimeField(auto_now_add=True)
+    timestamp = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        ordering = ['timestamp']
     
     def __str__(self):
-        return f" From {self.sender} to {self.receiver} at{self.timestamp}"
+        if self.trip:
+            return f"Group: {self.sender} in {self.trip.title} at {self.timestamp}"
+        return f"Direct: {self.sender} to {self.receiver} at {self.timestamp}"
 
 
 class ChatMessage(models.Model):

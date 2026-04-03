@@ -72,20 +72,8 @@ class MatchActionView(APIView):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def search_users(request):
-    """Search users by username, first name, or last name"""
-    # Check if user has approved KYC
-    try:
-        kyc_profile = request.user.kyc_profile
-        if kyc_profile.status != 'approved':
-            return Response({
-                "detail": f"KYC approval required to search users. Your status: {kyc_profile.status or 'not_submitted'}",
-                "kyc_status": kyc_profile.status
-            }, status=403)
-    except KYCProfile.DoesNotExist:
-        return Response({
-            "detail": "You must complete and get KYC approval before searching for users",
-            "kyc_status": "not_submitted"
-        }, status=403)
+    """Search users by username, first name, or last name - no KYC required"""
+    # Removed KYC check - search is just general user discovery
     
     query = request.query_params.get('q', '').strip()
     
@@ -414,15 +402,18 @@ def get_user_friends(request, user_id=None):
                 profile_pic = profile.profile_picture.url if profile.profile_picture else None
             except UserProfile.DoesNotExist:
                 profile_pic = None
+                profile = None
             
-            friends_data.append({
-                "id": friend_user.id,
-                "username": friend_user.username,
-                "first_name": friend_user.first_name,
-                "last_name": friend_user.last_name,
-                "profile_picture": profile_pic,
-            })
-            friends_ids.add(friend_user.id)
+            if profile:  # Only add if profile exists
+                friends_data.append({
+                    "id": profile.id,  # UserProfile ID (for messaging)
+                    "user_id": friend_user.id,  # Also include User ID for reference
+                    "username": friend_user.username,
+                    "first_name": friend_user.first_name,
+                    "last_name": friend_user.last_name,
+                    "profile_picture": profile_pic,
+                })
+                friends_ids.add(friend_user.id)
     
     # Add friends from incoming requests
     for freq in incoming_friends:
@@ -433,15 +424,18 @@ def get_user_friends(request, user_id=None):
                 profile_pic = profile.profile_picture.url if profile.profile_picture else None
             except UserProfile.DoesNotExist:
                 profile_pic = None
+                profile = None
             
-            friends_data.append({
-                "id": friend_user.id,
-                "username": friend_user.username,
-                "first_name": friend_user.first_name,
-                "last_name": friend_user.last_name,
-                "profile_picture": profile_pic,
-            })
-            friends_ids.add(friend_user.id)
+            if profile:  # Only add if profile exists
+                friends_data.append({
+                    "id": profile.id,  # UserProfile ID (for messaging)
+                    "user_id": friend_user.id,  # Also include User ID for reference
+                    "username": friend_user.username,
+                    "first_name": friend_user.first_name,
+                    "last_name": friend_user.last_name,
+                    "profile_picture": profile_pic,
+                })
+                friends_ids.add(friend_user.id)
     
     return Response({"friends": friends_data, "friends_count": len(friends_data)})
 

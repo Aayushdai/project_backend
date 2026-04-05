@@ -15,7 +15,7 @@ class ChatMessageSerializer(serializers.ModelSerializer):
     class Meta:
         model = ChatMessage
         fields = ['id', 'user', 'username', 'message', 'response', 'created_at']
-        read_only_fields = ['user', 'response', 'created_at']
+        read_only_fields = ['id', 'user', 'response', 'created_at', 'username']
     
     def get_username(self, obj):
         return obj.user.user.username if obj.user else None
@@ -23,53 +23,66 @@ class ChatMessageSerializer(serializers.ModelSerializer):
 
 class ChatViewSet(viewsets.ModelViewSet):
     serializer_class = ChatMessageSerializer
-    permission_classes = [IsAuthenticated, IsKYCApproved]
+    permission_classes = [IsAuthenticated]  # Chat doesn't require KYC approval
     
     def get_queryset(self):
-        user_profile = UserProfile.objects.get(user=self.request.user)
-        return ChatMessage.objects.filter(user=user_profile).order_by('-created_at')
-    
-    @action(detail=False, methods=['post'])
-    def chat(self, request):
-        """Handle chat messages"""
-        message = request.data.get('message', '').strip()
-        
-        if not message:
-            return Response(
-                {'error': 'Message cannot be empty'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Get user profile
         try:
-            user_profile = UserProfile.objects.get(user=request.user)
+            user_profile = UserProfile.objects.get(user=self.request.user)
+            return ChatMessage.objects.filter(user=user_profile).order_by('-created_at')
         except UserProfile.DoesNotExist:
-            return Response(
-                {'error': 'User profile not found'},
-                status=status.HTTP_400_BAD_REQUEST
+            return ChatMessage.objects.none()
+
+    def create(self, request, *args, **kwargs):
+        """Override create to handle chat messages"""
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        try:
+            message = request.data.get('message', '').strip()
+            
+            if not message:
+                return Response(
+                    {'error': 'Message cannot be empty'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Get user profile
+            try:
+                user_profile = UserProfile.objects.get(user=request.user)
+            except UserProfile.DoesNotExist:
+                logger.error(f"UserProfile not found for user {request.user}")
+                return Response(
+                    {'error': 'User profile not found'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Generate response (now returns structured data)
+            response_data = self.generate_response(message)
+            response_text = response_data.get('response', '')
+            
+            # Save chat message
+            chat_msg = ChatMessage.objects.create(
+                user=user_profile,
+                message=message,
+                response=response_text
             )
-        
-        # Generate response (now returns structured data)
-        response_data = self.generate_response(message)
-        response_text = response_data.get('response', '')
-        
-        # Save chat message
-        chat_msg = ChatMessage.objects.create(
-            user=user_profile,
-            message=message,
-            response=response_text
-        )
-        
-        serializer = self.get_serializer(chat_msg)
-        
-        # Return response with additional metadata for frontend
-        return Response({
-            **serializer.data,
-            'response_metadata': {
-                'type': response_data.get('type', 'default'),
-                'links': response_data.get('links', [])
-            }
-        }, status=status.HTTP_201_CREATED)
+            
+            serializer = self.get_serializer(chat_msg)
+            
+            # Return response with additional metadata for frontend
+            return Response({
+                **serializer.data,
+                'response_metadata': {
+                    'type': response_data.get('type', 'default'),
+                    'links': response_data.get('links', [])
+                }
+            }, status=status.HTTP_201_CREATED)
+        except Exception as e:
+            logger.exception(f"Error in chat endpoint: {str(e)}")
+            return Response(
+                {'error': f'Server error: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
     
     def generate_response(self, message):
         """Generate a response based on the message with optional clickable keywords"""
@@ -246,12 +259,15 @@ class MessageViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     
     def get_queryset(self):
-        user = self.request.user
-        user_profile = UserProfile.objects.get(user=user)
-        # Get messages where user is sender or receiver
-        return Message.objects.filter(
-            Q(sender=user_profile) | Q(receiver=user_profile)
-        ).order_by('timestamp')
+        try:
+            user = self.request.user
+            user_profile = UserProfile.objects.get(user=user)
+            # Get messages where user is sender or receiver
+            return Message.objects.filter(
+                Q(sender=user_profile) | Q(receiver=user_profile)
+            ).order_by('timestamp')
+        except UserProfile.DoesNotExist:
+            return Message.objects.none()
     
     def create(self, request, *args, **kwargs):
         """Send a message (direct or group)"""

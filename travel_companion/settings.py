@@ -2,6 +2,11 @@ import os
 from pathlib import Path
 from datetime import timedelta
 
+# Load environment variables from .env file
+if os.path.exists('.env'):
+    from dotenv import load_dotenv
+    load_dotenv()
+
 # ========================
 # BASE DIR
 # ========================
@@ -10,19 +15,27 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # ========================
 # SECURITY
 # ========================
-SECRET_KEY = 'django-insecure-33a!xk@x1n43*g-cg=9+(nnpcd+_m%xtuscg#0p(%6^0n#lnui'
+SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-33a!xk@x1n43*g-cg=9+(nnpcd+_m%xtuscg#0p(%6^0n#lnui')
 
-DEBUG = True
+# DEBUG should be False in production
+DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 
-ALLOWED_HOSTS = ["127.0.0.1", "localhost"]
+# Production domains and localhost for development
+ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
 # ========================
 # CORS (React connection)
 # ========================
-CORS_ALLOWED_ORIGINS = [
+# For development
+CORS_ALLOWED_ORIGINS_DEV = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
 ]
+
+# For production - use environment variable
+CORS_ALLOWED_ORIGINS_PROD = os.environ.get('CORS_ALLOWED_ORIGINS', '').split(',') if os.environ.get('CORS_ALLOWED_ORIGINS') else []
+
+CORS_ALLOWED_ORIGINS = CORS_ALLOWED_ORIGINS_DEV if DEBUG else CORS_ALLOWED_ORIGINS_PROD
 
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_HEADERS = [
@@ -82,6 +95,22 @@ MIDDLEWARE = [
 ]
 
 # ========================
+# SECURITY HEADERS (Production)
+# ========================
+if not DEBUG:
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_BROWSER_XSS_FILTER = True
+    SECURE_CONTENT_SECURITY_POLICY = {
+        "default-src": ("'self'",),
+    }
+    SECURE_HSTS_SECONDS = 31536000  # 1 year
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    X_FRAME_OPTIONS = "DENY"
+
+# ========================
 # URLS & TEMPLATES
 # ========================
 ROOT_URLCONF = 'travel_companion.urls'
@@ -115,14 +144,30 @@ CHANNEL_LAYERS = {
 WSGI_APPLICATION = 'travel_companion.wsgi.application'
 
 # ========================
-# DATABASE (SQLite)
+# DATABASE (SQLite for dev, PostgreSQL for prod)
 # ========================
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+if DEBUG:
+    # Development: SQLite
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
     }
-}
+else:
+    # Production: PostgreSQL
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': os.environ.get('DB_NAME', 'travel_companion'),
+            'USER': os.environ.get('DB_USER', 'postgres'),
+            'PASSWORD': os.environ.get('DB_PASSWORD', ''),
+            'HOST': os.environ.get('DB_HOST', 'localhost'),
+            'PORT': os.environ.get('DB_PORT', '5432'),
+            'ATOMIC_REQUESTS': True,
+            'CONN_MAX_AGE': 600,  # Connection pooling
+        }
+    }
 
 # ========================
 # REST FRAMEWORK + JWT

@@ -32,8 +32,13 @@ CORS_ALLOWED_ORIGINS_DEV = [
     "http://127.0.0.1:3000",
 ]
 
-# For production - use environment variable
-CORS_ALLOWED_ORIGINS_PROD = os.environ.get('CORS_ALLOWED_ORIGINS', '').split(',') if os.environ.get('CORS_ALLOWED_ORIGINS') else []
+# For production - use environment variable + add hardcoded Vercel frontend
+CORS_ALLOWED_ORIGINS_PROD = [
+    "https://project-front-tan.vercel.app",
+    "https://project-front-c76lpejp6-aayushdais-projects.vercel.app",
+]
+if os.environ.get('CORS_ALLOWED_ORIGINS'):
+    CORS_ALLOWED_ORIGINS_PROD.extend(os.environ.get('CORS_ALLOWED_ORIGINS', '').split(','))
 
 CORS_ALLOWED_ORIGINS = CORS_ALLOWED_ORIGINS_DEV if DEBUG else CORS_ALLOWED_ORIGINS_PROD
 

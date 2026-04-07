@@ -14,7 +14,7 @@ admin.site.index_title = "Welcome to TCS Admin"
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('users/', include('apps.users.urls')),
+    path('api/users/', include('apps.users.urls')),
     path('api/trips/', include('apps.trips.urls')),
     path('api/trips/expenses/', include('apps.expenses.urls')),
     path('api/chat/', include('apps.chat.urls_new')),

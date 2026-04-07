@@ -32,11 +32,16 @@ CORS_ALLOWED_ORIGINS_DEV = [
     "http://127.0.0.1:3000",
 ]
 
-# For production - use environment variable + add hardcoded Vercel frontend
+# For production - add Vercel frontend URLs and Render backend
 CORS_ALLOWED_ORIGINS_PROD = [
+    # Vercel Frontend URLs
     "https://project-front-tan.vercel.app",
     "https://project-front-c76lpejp6-aayushdais-projects.vercel.app",
+    "https://project-front-n8mk7f7ll-aayushdais-projects.vercel.app",
+    # Render Backend (for internal API calls - WebSocket, etc)
+    "https://travel-companion-api-mrmr.onrender.com",
 ]
+# Add additional origins via environment variable if needed
 if os.environ.get('CORS_ALLOWED_ORIGINS'):
     CORS_ALLOWED_ORIGINS_PROD.extend(os.environ.get('CORS_ALLOWED_ORIGINS', '').split(','))
 

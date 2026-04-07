@@ -21,7 +21,15 @@ SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-33a!xk@x1n43*g-cg=9+(
 DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 
 # Production domains and localhost for development
-ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+ALLOWED_HOSTS = [
+    'travel-companion-api-mrmr.onrender.com',
+    'localhost',
+    '127.0.0.1',
+    '.onrender.com',  # Allow all Render domains
+]
+# Add any additional hosts from environment variable
+if os.environ.get('ALLOWED_HOSTS'):
+    ALLOWED_HOSTS.extend(os.environ.get('ALLOWED_HOSTS', '').split(','))
 
 # ========================
 # CORS (React connection)

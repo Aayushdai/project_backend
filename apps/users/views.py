@@ -8,7 +8,7 @@ from django.views.decorators.csrf import csrf_exempt
 from .models import UserLoginHistory, User
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 
 import json
@@ -479,11 +479,18 @@ def admin_reset_password(request):
 # ✅ ========== PASSWORD RECOVERY ENDPOINTS ==========
 
 @api_view(["GET"])
+@permission_classes([AllowAny])
 def get_security_questions(request):
     """Get all available security questions for password recovery"""
-    from .models import SecurityQuestion
-    questions = SecurityQuestion.objects.all().values('id', 'question', 'category')
-    return Response(list(questions))
+    try:
+        from .models import SecurityQuestion
+        questions = SecurityQuestion.objects.all().values('id', 'question', 'category')
+        return Response(list(questions))
+    except Exception as e:
+        return Response({
+            "error": str(e),
+            "message": "Failed to retrieve security questions. Please try again later."
+        }, status=500)
 
 
 @csrf_exempt

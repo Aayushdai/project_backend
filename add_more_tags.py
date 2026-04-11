@@ -38,7 +38,6 @@ constraint_data = [
     ('Luxury Lover', 'values', 'Prefers high-end experiences'),
     ('Minimalist', 'values', 'Prefers simple, clutter-free lifestyle'),
     ('Adventure Seeker', 'values', 'Loves extreme sports and risks'),
-    ('LGBTQ+ Friendly', 'values', 'Supportive of LGBTQ+ community'),
     ('Child-friendly', 'values', 'Comfortable traveling with children'),
     ('Quiet Traveler', 'values', 'Prefers peaceful environments'),
     ('Social Butterfly', 'values', 'Loves meeting people and socializing'),

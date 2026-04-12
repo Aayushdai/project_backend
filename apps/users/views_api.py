@@ -159,6 +159,79 @@ def calculate_similarity(request, user_id):
     })
 
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def trip_user_suggestions(request):
+    """
+    Get user suggestions for inviting to a trip.
+    Based on similarity scores, excludes current user, trip members, and already invited users.
+    
+    Query params:
+    - trip_id: Trip ID to get suggestions for
+    """
+    from apps.trips.models import Trip, TripInvitation
+    
+    trip_id = request.query_params.get('trip_id')
+    if not trip_id:
+        return Response({"detail": "trip_id parameter required"}, status=400)
+    
+    try:
+        trip = Trip.objects.get(id=trip_id)
+    except Trip.DoesNotExist:
+        return Response({"detail": "Trip not found"}, status=404)
+    
+    # Only trip members can request suggestions
+    user_profile = request.user.userprofile
+    is_creator = trip.creator == user_profile
+    is_member = trip.participants.filter(id=user_profile.id).exists()
+    
+    if not is_creator and not is_member:
+        return Response({"detail": "Only trip members can request suggestions"}, status=403)
+    
+    # Get current user's profile
+    current_profile = request.user.userprofile
+    
+    # Get trip members and invited users
+    trip_members = set(trip.participants.values_list('id', flat=True))
+    invited_users = set(
+        TripInvitation.objects.filter(trip=trip, status='pending').values_list('invited_user_id', flat=True)
+    )
+    
+    # Get all other users for similarity comparison
+    all_profiles = UserProfile.objects.exclude(
+        id__in=trip_members | invited_users | {current_profile.id}
+    )
+    
+    # Calculate similarity for each user
+    from .utils import calculate_user_similarity
+    
+    suggestions = []
+    for profile in all_profiles:
+        try:
+            similarity = calculate_user_similarity(current_profile, profile)
+            
+            # Only suggest users with > 0.3 (30%) similarity
+            if similarity > 0.3:
+                user = profile.user
+                suggestions.append({
+                    'id': profile.id,
+                    'name': f"{user.first_name} {user.last_name}".strip() or user.username,
+                    'email': user.email,
+                    'avatar': (user.first_name[0] + user.last_name[0]).upper() if user.first_name and user.last_name else user.username[0].upper(),
+                    'interests': list(profile.constraint_tags.values_list('name', flat=True)),
+                    'similarity': round(similarity * 100, 0)  # Convert to percentage
+                })
+        except Exception as e:
+            # Skip users with calculation errors
+            continue
+    
+    # Sort by similarity descending
+    suggestions.sort(key=lambda x: x['similarity'], reverse=True)
+    
+    # Limit to top 10
+    return Response(suggestions[:10])
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def send_friend_request(request, user_id):

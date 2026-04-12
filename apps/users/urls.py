@@ -3,7 +3,7 @@ from .views_api import (
     match_users, search_users, get_user_profile, calculate_similarity,
     send_friend_request, get_friend_request_status, respond_friend_request,
     get_pending_friend_requests, cancel_friend_request, get_user_friends,
-    unfriend_user, kyc_submission, kyc_pending_list, KYCAdminActionView
+    unfriend_user, kyc_submission, kyc_pending_list, KYCAdminActionView, trip_user_suggestions
 )
 from . import views_api
 from . import views
@@ -13,6 +13,7 @@ urlpatterns = [
     path("register/", views.frontend_register, name="frontend-register"),
     path("matches/", match_users),
     path("search/", search_users, name="search-users"),
+    path("suggestions/", trip_user_suggestions, name="trip-user-suggestions"),
     path("user-profile/<int:user_id>/", get_user_profile, name="get-user-profile"),
     path("similarity/<int:user_id>/", calculate_similarity, name="calculate-similarity"),
     path("friend-request/send/<int:user_id>/", send_friend_request, name="send-friend-request"),

@@ -5,12 +5,16 @@ from django.contrib.auth.decorators import login_required
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.generics import ListAPIView
 from django.db.models import Q, Count, Case, When, IntegerField, F
-from .models import Trip, Destination, City
+from .models import Trip, Destination, City, TripExpenseBudget, TripReview, TripInvitation, TripInviteLink, Notification
 from .forms import TripForm
-from .serializers import TripSerializer, DestinationSerializer, CitySerializer
+from .serializers import TripSerializer, DestinationSerializer, CitySerializer, TripExpenseBudgetSerializer, TripReviewSerializer, TripInvitationSerializer, TripInviteLinkSerializer, NotificationSerializer
 from django.http import JsonResponse
-from datetime import date
+from datetime import date, datetime
 from apps.kyc.permissions import IsKYCApproved
+import logging
+import uuid
+
+logger = logging.getLogger(__name__)
 
 
 def kyc_required(view_func):
@@ -57,38 +61,27 @@ class TripListAPIView(generics.ListCreateAPIView):
     serializer_class = TripSerializer
     permission_classes = [permissions.IsAuthenticated, IsKYCApproved]
 
+    def list(self, request, *args, **kwargs):
+        """Override list to mark past trips as completed"""
+        from datetime import date
+        # Mark all past incomplete trips as completed
+        today = date.today()
+        Trip.objects.filter(end_date__lt=today, is_completed=False).update(is_completed=True)
+        return super().list(request, *args, **kwargs)
+
     def get_queryset(self):
         user_profile = self.request.user.userprofile
         today = date.today()
         
         # Get all future public trips (same for all users)
         # PLUS trips where user is creator or participant (to see their own trips)
-        trips = Trip.objects.filter(
+        queryset = Trip.objects.filter(
             Q(end_date__gte=today, is_public=True) |  # Future public trips visible to everyone
-            Q(creator=user_profile) |                  # User's own trips (regardless of date)
+            Q(creator=user_profile) |                  # User's own trips (regardless of date or privacy)
             Q(participants=user_profile)               # User's joined trips (regardless of date)
-        ).distinct()
+        ).distinct().order_by('-start_date')
         
-        # Get user's constraint tags
-        user_tags = set(user_profile.constraint_tags.values_list('id', flat=True))
-        
-        # Sort by similarity: trips with matching tags first, then by date
-        def get_similarity_score(trip):
-            trip_tags = set(trip.constraint_tags.values_list('id', flat=True))
-            if not user_tags and not trip_tags:
-                return 0  # Both have no tags
-            if not user_tags or not trip_tags:
-                return -1000  # One has no tags, lower priority
-            # Calculate Jaccard similarity
-            intersection = len(user_tags & trip_tags)
-            union = len(user_tags | trip_tags)
-            return intersection / union if union > 0 else 0
-        
-        # Sort: first by similarity (descending), then by date (descending)
-        trips_list = list(trips)
-        trips_list.sort(key=lambda t: (-get_similarity_score(t), -t.start_date.toordinal()))
-        
-        return trips_list
+        return queryset
 
     def get_queryset_qs(self):
         """Return QuerySet version (used by DRF pagination if needed)"""
@@ -180,10 +173,16 @@ class TripHistoryAPIView(generics.ListAPIView):
         today = date.today()
         
         # Get only past trips where user is creator or participant
+        # Mark them as completed if not already marked
         trips = Trip.objects.filter(
             Q(creator=user_profile) | Q(participants=user_profile),
             end_date__lt=today
         ).distinct().order_by('-end_date')
+        
+        # Ensure all past trips are marked as completed
+        for trip in trips:
+            if not trip.is_completed:
+                trip.mark_as_completed()
         
         return trips
 
@@ -198,6 +197,53 @@ class DestinationListAPIView(ListAPIView):
     serializer_class = DestinationSerializer
 
 
+class TripExpenseBudgetListAPIView(generics.ListCreateAPIView):
+    """List and create expense budgets for a trip"""
+    serializer_class = TripExpenseBudgetSerializer
+    permission_classes = [permissions.IsAuthenticated, IsKYCApproved]
+
+    def get_queryset(self):
+        trip_id = self.kwargs.get('trip_id')
+        if trip_id:
+            return TripExpenseBudget.objects.filter(trip_id=trip_id)
+        return TripExpenseBudget.objects.none()
+
+    def perform_create(self, serializer):
+        trip_id = self.kwargs.get('trip_id')
+        logger.info(f"Attempting to create expense for trip_id={trip_id}")
+        logger.info(f"Current user: {self.request.user.userprofile}")
+        
+        try:
+            trip = Trip.objects.get(id=trip_id)
+            logger.info(f"Found trip: {trip.title}, creator: {trip.creator}")
+            
+            # Only creator can add expenses
+            if trip.creator != self.request.user.userprofile:
+                logger.warning(f"User {self.request.user.userprofile} is not the creator of trip {trip_id}")
+                raise PermissionDenied("Only the trip creator can add expenses.")
+            
+            logger.info(f"User has permission, saving expense: {serializer.validated_data}")
+            serializer.save(trip=trip)
+            logger.info(f"✅ Expense saved successfully")
+        except Trip.DoesNotExist:
+            logger.error(f"Trip {trip_id} not found")
+            raise PermissionDenied("Trip not found.")
+
+
+class TripExpenseBudgetDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
+    """Retrieve, update, or delete an expense budget"""
+    serializer_class = TripExpenseBudgetSerializer
+    permission_classes = [permissions.IsAuthenticated, IsKYCApproved]
+    queryset = TripExpenseBudget.objects.all()
+
+    def get_object(self):
+        expense = super().get_object()
+        # Only creator of the trip can modify its expenses
+        if expense.trip.creator != self.request.user.userprofile:
+            raise PermissionDenied("Only the trip creator can modify expenses.")
+        return expense
+
+
 class DestinationDetailAPIView(generics.RetrieveAPIView):
     queryset = Destination.objects.select_related('city')
     serializer_class = DestinationSerializer
@@ -207,3 +253,282 @@ class DestinationDetailAPIView(generics.RetrieveAPIView):
 def get_destinations(request):
     destinations = list(Destination.objects.values())
     return JsonResponse(destinations, safe=False)
+
+
+class TripReviewListCreateAPIView(generics.ListCreateAPIView):
+    """API view for creating and retrieving reviews for a trip"""
+    serializer_class = TripReviewSerializer
+    permission_classes = [permissions.IsAuthenticated, IsKYCApproved]
+    
+    def get_queryset(self):
+        """Get all reviews for the specified trip"""
+        trip_id = self.kwargs.get('trip_id')
+        return TripReview.objects.filter(trip_id=trip_id)
+    
+    def perform_create(self, serializer):
+        """Create a review, ensuring user is a participant of the trip"""
+        trip_id = self.kwargs.get('trip_id')
+        trip = get_object_or_404(Trip, id=trip_id)
+        user_profile = self.request.user.userprofile
+        
+        # Check if trip is completed
+        if trip.end_date >= date.today():
+            raise PermissionDenied("Can only review completed trips.")
+        
+        # Check if user is a participant or creator
+        is_participant = user_profile in trip.participants.all() or trip.creator == user_profile
+        if not is_participant:
+            raise PermissionDenied("Only trip participants can leave reviews.")
+        
+        # Save the review with the current user as reviewer
+        serializer.save(trip=trip, reviewer=user_profile)
+
+
+class JoinTripByInviteCodeAPIView(generics.GenericAPIView):
+    """API view to join a private trip using an invite code"""
+    permission_classes = [permissions.IsAuthenticated, IsKYCApproved]
+    serializer_class = TripSerializer
+    
+    def post(self, request, invite_code):
+        """Join a trip using invite code"""
+        try:
+            trip = Trip.objects.get(invite_code=invite_code)
+        except Trip.DoesNotExist:
+            return Response(
+                {"error": "Invalid invite code. Trip not found."},
+                status=404
+            )
+        
+        # Check if trip is still open (not completed)
+        if trip.is_completed:
+            return Response(
+                {"error": "This trip has already been completed."},
+                status=400
+            )
+        
+        user_profile = request.user.userprofile
+        
+        # Check if already a participant
+        if trip.participants.filter(id=user_profile.id).exists():
+            return Response(
+                {"message": "You are already a participant of this trip."},
+                status=200,
+                data=TripSerializer(trip).data
+            )
+        
+        # Add user as participant
+        trip.participants.add(user_profile)
+        
+        return Response(
+            {
+                "message": f"Successfully joined trip: {trip.title}",
+                "trip": TripSerializer(trip).data
+            },
+            status=200
+        )
+
+
+class GenerateInviteLinkAPIView(generics.CreateAPIView):
+    """Generate a shareable invite link for a trip"""
+    serializer_class = TripInviteLinkSerializer
+    permission_classes = [permissions.IsAuthenticated, IsKYCApproved]
+    
+    def create(self, request, *args, **kwargs):
+        trip_id = self.kwargs.get('trip_id')
+        trip = get_object_or_404(Trip, id=trip_id)
+        
+        # Only trip creator can generate links
+        if trip.creator != request.user.userprofile:
+            raise PermissionDenied("Only the trip creator can generate invite links.")
+        
+        # Generate unique code
+        code = str(uuid.uuid4())[:8].upper()
+        while TripInviteLink.objects.filter(code=code).exists():
+            code = str(uuid.uuid4())[:8].upper()
+        
+        # Create invite link
+        invite_link = TripInviteLink.objects.create(
+            trip=trip,
+            created_by=request.user.userprofile,
+            code=code
+        )
+        
+        # Return the response with the invite link
+        frontend_url = request.build_absolute_uri('/').rstrip('/')
+        return Response({
+            'link': f"{frontend_url}/invite/{code}",
+            'code': code,
+            'trip_id': trip.id
+        }, status=201)
+
+
+class TripInvitationListAPIView(generics.ListCreateAPIView):
+    """List all invitations for a trip (GET) and create new invitations (POST)"""
+    serializer_class = TripInvitationSerializer
+    permission_classes = [permissions.IsAuthenticated, IsKYCApproved]
+    
+    def get_queryset(self):
+        trip_id = self.kwargs.get('trip_id')
+        trip = get_object_or_404(Trip, id=trip_id)
+        
+        # Only creator can view invitations
+        if trip.creator != self.request.user.userprofile:
+            raise PermissionDenied("Only the trip creator can view invitations.")
+        
+        return TripInvitation.objects.filter(trip_id=trip_id)
+    
+    def perform_create(self, serializer):
+        trip_id = self.kwargs.get('trip_id')
+        trip = get_object_or_404(Trip, id=trip_id)
+        
+        # Only trip creator can send invitations
+        if trip.creator != self.request.user.userprofile:
+            raise PermissionDenied("Only the trip creator can send invitations.")
+        
+        serializer.save(trip=trip, invited_by=self.request.user.userprofile)
+
+
+class TripInvitationDeleteAPIView(generics.DestroyAPIView):
+    """Revoke a pending invitation"""
+    serializer_class = TripInvitationSerializer
+    permission_classes = [permissions.IsAuthenticated, IsKYCApproved]
+    queryset = TripInvitation.objects.all()
+    lookup_field = 'pk'
+    
+    def get_object(self):
+        invitation = super().get_object()
+        trip = invitation.trip
+        
+        # Only trip creator can revoke invitations
+        if trip.creator != self.request.user.userprofile:
+            raise PermissionDenied("Only the trip creator can revoke invitations.")
+        
+        # Can only revoke pending invitations
+        if invitation.status != 'pending':
+            raise PermissionDenied("Can only revoke pending invitations.")
+        
+        return invitation
+
+
+class MyInvitationsListAPIView(generics.ListAPIView):
+    """Get all invitations received by the current user"""
+    serializer_class = TripInvitationSerializer
+    permission_classes = [permissions.IsAuthenticated, IsKYCApproved]
+    
+    def get_queryset(self):
+        """Get all invitations for current user (pending, accepted, rejected)"""
+        user_profile = self.request.user.userprofile
+        return TripInvitation.objects.filter(invited_user=user_profile).order_by('-created_at')
+
+
+class RespondToInvitationAPIView(generics.UpdateAPIView):
+    """Accept or reject a trip invitation"""
+    serializer_class = TripInvitationSerializer
+    permission_classes = [permissions.IsAuthenticated, IsKYCApproved]
+    queryset = TripInvitation.objects.all()
+    
+    def patch(self, request, *args, **kwargs):
+        """Accept or reject an invitation"""
+        invitation = self.get_object()
+        
+        # Only the invited user can respond
+        if invitation.invited_user != request.user.userprofile:
+            raise PermissionDenied("Only the invited user can respond to this invitation.")
+        
+        # Can only respond to pending invitations
+        if invitation.status != 'pending':
+            raise PermissionDenied(f"Can only respond to pending invitations. This is {invitation.status}.")
+        
+        # Check if invitation has expired
+        if invitation.is_expired:
+            raise PermissionDenied("This invitation has expired (was valid for 1 hour).")
+        
+        action = request.data.get('action')
+        
+        if action == 'accept':
+            invitation.status = 'accepted'
+            invitation.accepted_at = datetime.now()
+            # Add user as participant to the trip
+            invitation.trip.participants.add(invitation.invited_user)
+            invitation.save()
+            return Response({
+                'message': f'Successfully joined trip: {invitation.trip.title}',
+                'status': 'accepted',
+                'trip': TripSerializer(invitation.trip).data
+            })
+        elif action == 'reject':
+            invitation.status = 'rejected'
+            invitation.rejected_at = datetime.now()
+            invitation.save()
+            return Response({
+                'message': 'Invitation declined',
+                'status': 'rejected'
+            })
+        else:
+            return Response({
+                'error': 'Invalid action. Use "accept" or "reject".'
+            }, status=400)
+
+
+class NotificationListAPIView(generics.ListAPIView):
+    """Get all notifications for the current user"""
+    serializer_class = NotificationSerializer
+    permission_classes = [permissions.IsAuthenticated, IsKYCApproved]
+    
+    def get_queryset(self):
+        """Get all notifications for current user, ordered by most recent"""
+        user_profile = self.request.user.userprofile
+        return Notification.objects.filter(recipient=user_profile).order_by('-created_at')
+
+
+class UnreadNotificationCountAPIView(generics.RetrieveAPIView):
+    """Get count of unread notifications"""
+    permission_classes = [permissions.IsAuthenticated, IsKYCApproved]
+    
+    def retrieve(self, request, *args, **kwargs):
+        """Return count of unread notifications"""
+        user_profile = request.user.userprofile
+        unread_count = Notification.objects.filter(
+            recipient=user_profile,
+            is_read=False
+        ).count()
+        return Response({'unread_count': unread_count})
+
+
+class NotificationMarkAsReadAPIView(generics.UpdateAPIView):
+    """Mark a notification as read"""
+    serializer_class = NotificationSerializer
+    permission_classes = [permissions.IsAuthenticated, IsKYCApproved]
+    queryset = Notification.objects.all()
+    
+    def patch(self, request, *args, **kwargs):
+        """Mark notification as read"""
+        notification = self.get_object()
+        
+        # Only the recipient can mark as read
+        if notification.recipient != request.user.userprofile:
+            raise PermissionDenied("You can only mark your own notifications as read.")
+        
+        notification.is_read = True
+        notification.save()
+        return Response({
+            'message': 'Notification marked as read',
+            'notification': NotificationSerializer(notification).data
+        })
+
+
+class NotificationMarkAllAsReadAPIView(generics.UpdateAPIView):
+    """Mark all notifications as read"""
+    permission_classes = [permissions.IsAuthenticated, IsKYCApproved]
+    
+    def patch(self, request, *args, **kwargs):
+        """Mark all notifications as read for current user"""
+        user_profile = request.user.userprofile
+        count = Notification.objects.filter(
+            recipient=user_profile,
+            is_read=False
+        ).update(is_read=True)
+        return Response({
+            'message': f'{count} notifications marked as read',
+            'count': count
+        })

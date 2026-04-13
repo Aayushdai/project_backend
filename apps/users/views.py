@@ -2,6 +2,7 @@ from django.shortcuts import render, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth import authenticate, login
 from django.http import JsonResponse
+from django.utils import timezone
 from apps.users.models import UserProfile
 from apps.users.utils import find_similar_users
 from django.views.decorators.csrf import csrf_exempt
@@ -73,6 +74,10 @@ def frontend_login(request):
         return JsonResponse({"success": False, "message": "Invalid credentials"}, status=401)
 
     # ✅ Allow login for all users (KYC restrictions are enforced on specific features via IsKYCApproved permission)
+    # Update last_login timestamp
+    user.last_login = timezone.now()
+    user.save(update_fields=['last_login'])
+    
     refresh = RefreshToken.for_user(user)
     access  = str(refresh.access_token)
 
@@ -285,6 +290,7 @@ def me_view(request):
         "last_name":   user.last_name,
         "email":       user.email,
         "date_joined": user.date_joined,
+        "last_login":  user.last_login,
         "status":      kyc_status,  # ✅ KYC status from kyc_profile
         "profile_picture":          pic,
         "bio":                      profile.bio                     if profile else "",
@@ -367,6 +373,205 @@ def update_profile_view(request):
         "min_match_age":   profile.min_match_age,
         "max_match_age":   profile.max_match_age,
     })
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def change_password_view(request):
+    """Allow authenticated users to change their password"""
+    user = request.user
+    
+    try:
+        current_password = request.data.get('current_password')
+        new_password = request.data.get('new_password')
+        
+        # Validate inputs
+        if not current_password or not new_password:
+            return Response(
+                {"error": "current_password and new_password are required"},
+                status=400
+            )
+        
+        # Validate current password
+        if not user.check_password(current_password):
+            return Response(
+                {"error": "Current password is incorrect"},
+                status=401
+            )
+        
+        # Validate new password strength
+        if len(new_password) < 8:
+            return Response(
+                {"error": "New password must be at least 8 characters long"},
+                status=400
+            )
+        
+        # Check if new password is different from current
+        if current_password == new_password:
+            return Response(
+                {"error": "New password must be different from current password"},
+                status=400
+            )
+        
+        # Set the new password
+        user.set_password(new_password)
+        user.save()
+        
+        return Response({
+            "success": True,
+            "message": "Password changed successfully"
+        }, status=200)
+        
+    except Exception as e:
+        return Response(
+            {"error": f"An error occurred: {str(e)}"},
+            status=500
+        )
+
+
+# ============================================
+# USER PREFERENCES ENDPOINTS
+# ============================================
+
+@api_view(['PATCH', 'GET'])
+@permission_classes([IsAuthenticated])
+def user_preferences_view(request):
+    """Get or update user privacy and notification preferences"""
+    user = request.user
+    profile = user.userprofile
+    
+    if request.method == 'GET':
+        # Return current preferences
+        return Response({
+            "publicProfile": profile.public_profile,
+            "searchableByEmail": profile.searchable_by_email,
+            "showOnlineStatus": profile.show_online_status,
+            "shareTripActivity": profile.share_trip_activity,
+            "emailNotifications": profile.email_notifications,
+            "tripUpdates": profile.trip_updates,
+            "friendRequests": profile.friend_requests,
+        }, status=200)
+    
+    elif request.method == 'PATCH':
+        # Update preferences
+        try:
+            data = request.data
+            
+            # Update privacy preferences
+            if 'publicProfile' in data:
+                profile.public_profile = data['publicProfile']
+            if 'searchableByEmail' in data:
+                profile.searchable_by_email = data['searchableByEmail']
+            if 'showOnlineStatus' in data:
+                profile.show_online_status = data['showOnlineStatus']
+            if 'shareTripActivity' in data:
+                profile.share_trip_activity = data['shareTripActivity']
+            
+            # Update notification preferences
+            if 'emailNotifications' in data:
+                profile.email_notifications = data['emailNotifications']
+            if 'tripUpdates' in data:
+                profile.trip_updates = data['tripUpdates']
+            if 'friendRequests' in data:
+                profile.friend_requests = data['friendRequests']
+            
+            profile.save()
+            
+            return Response({
+                "success": True,
+                "message": "Preferences updated successfully",
+                "publicProfile": profile.public_profile,
+                "searchableByEmail": profile.searchable_by_email,
+                "showOnlineStatus": profile.show_online_status,
+                "shareTripActivity": profile.share_trip_activity,
+                "emailNotifications": profile.email_notifications,
+                "tripUpdates": profile.trip_updates,
+                "friendRequests": profile.friend_requests,
+            }, status=200)
+            
+        except Exception as e:
+            return Response(
+                {"error": f"An error occurred: {str(e)}"},
+                status=500
+            )
+
+
+# ============================================
+# ACCOUNT DELETION ENDPOINT
+# ============================================
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def delete_account_view(request):
+    """
+    Permanently delete user account after password verification.
+    Requires: password in request body
+    Cascade deletes all related data (UserProfile, KYC, Trips, FriendRequests, etc.)
+    """
+    user = request.user
+    
+    try:
+        password = request.data.get('password')
+        
+        # Validate password is provided
+        if not password:
+            return Response(
+                {"error": "Password is required to delete account"},
+                status=400
+            )
+        
+        # Verify password
+        if not user.check_password(password):
+            return Response(
+                {"error": "Invalid password. Account was not deleted."},
+                status=401
+            )
+        
+        # Get user info before deletion (for logging if needed)
+        username = user.username
+        user_id = user.id
+        
+        # Delete the user account (cascade will delete UserProfile and related data)
+        user.delete()
+        
+        return Response({
+            "success": True,
+            "message": "Account permanently deleted successfully"
+        }, status=200)
+        
+    except Exception as e:
+        return Response(
+            {"error": f"An error occurred during account deletion: {str(e)}"},
+            status=500
+        )
+
+
+# ============================================
+# LOGOUT ENDPOINT
+# ============================================
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def logout_view(request):
+    """
+    Logout endpoint
+    Clears the refresh token and logs the logout event
+    Frontend will clear the access token from localStorage
+    """
+    try:
+        # Log the logout event if needed
+        # Could add: LogEntry.objects.create(user=request.user, action='logout')
+        
+        return Response({
+            "success": True,
+            "message": "Logged out successfully"
+        }, status=200)
+        
+    except Exception as e:
+        return Response(
+            {"error": f"An error occurred during logout: {str(e)}"},
+            status=500
+        )
 
 
 # ============================================

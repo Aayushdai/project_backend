@@ -235,8 +235,8 @@ class MessageSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Message
-        fields = ['id', 'sender', 'sender_name', 'receiver', 'receiver_name', 'trip', 'trip_name', 'content', 'timestamp', 'isSent']
-        read_only_fields = ['sender', 'receiver', 'trip', 'timestamp']
+        fields = ['id', 'sender', 'sender_name', 'receiver', 'receiver_name', 'trip', 'trip_name', 'content', 'timestamp', 'isSent', 'is_system']
+        read_only_fields = ['sender', 'receiver', 'trip', 'timestamp', 'is_system']
     
     def get_sender_name(self, obj):
         return obj.sender.user.get_full_name() or obj.sender.user.username if obj.sender else None
@@ -316,6 +316,10 @@ class MessageViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST
                 )
             
+            # Check if this is a system message
+            is_system = request.data.get('is_system', False)
+            logger.info(f"Is system message: {is_system}")
+            
             # Determine if it's a direct message or group message
             receiver_id = request.data.get('receiver_id')
             trip_id = request.data.get('trip_id')
@@ -337,7 +341,8 @@ class MessageViewSet(viewsets.ModelViewSet):
                 message = Message.objects.create(
                     sender=sender_profile,
                     receiver=receiver,
-                    content=content
+                    content=content,
+                    is_system=is_system
                 )
                 logger.info(f"Direct message created: {message}")
             elif trip_id:
@@ -373,7 +378,8 @@ class MessageViewSet(viewsets.ModelViewSet):
                 message = Message.objects.create(
                     sender=sender_profile,
                     trip=trip,
-                    content=content
+                    content=content,
+                    is_system=is_system
                 )
                 logger.info(f"Group message created: {message}")
             else:

@@ -36,6 +36,17 @@ def match_users(request):
     result = []
 
     for user, similarity in matches:
+        # ✅ Privacy check: Skip if private profile (unless they are friends)
+        if not user.public_profile:
+            is_friend = FriendRequest.objects.filter(
+                status='accepted'
+            ).filter(
+                (Q(from_user=request.user, to_user=user.user) | Q(from_user=user.user, to_user=request.user))
+            ).exists()
+            
+            if not is_friend:
+                # Skip this match - private profile and not a friend
+                continue
 
         result.append({
             "username": user.user.username,
@@ -72,7 +83,7 @@ class MatchActionView(APIView):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def search_users(request):
-    """Search users by username, first name, or last name - no KYC required"""
+    """Search users by username, first name, or last name - respects privacy settings"""
     # Removed KYC check - search is just general user discovery
     
     query = request.query_params.get('q', '').strip()
@@ -92,6 +103,19 @@ def search_users(request):
         profile_pic = None
         try:
             profile = user.userprofile
+            
+            # ✅ Privacy check: Skip if private profile (unless they are friends)
+            if not profile.public_profile:
+                is_friend = FriendRequest.objects.filter(
+                    status='accepted'
+                ).filter(
+                    (Q(from_user=request.user, to_user=user) | Q(from_user=user, to_user=request.user))
+                ).exists()
+                
+                if not is_friend:
+                    # Skip this user - private profile and not a friend
+                    continue
+            
             if profile.profile_picture:
                 profile_pic = profile.profile_picture.url
         except UserProfile.DoesNotExist:
@@ -118,6 +142,34 @@ def get_user_profile(request, user_id):
         profile = user.userprofile
     except (User.DoesNotExist, UserProfile.DoesNotExist):
         return Response({"detail": "User profile not found"}, status=404)
+    
+    # Check privacy settings - only allow if:
+    # 1. User's profile is public, OR
+    # 2. Requester is the profile owner, OR
+    # 3. Requester is a friend (accepted friend request exists)
+    if not profile.public_profile:
+        # Profile is private
+        if not request.user.is_authenticated:
+            # Not logged in - cannot view private profile
+            return Response(
+                {"detail": "This profile is private. You must be a friend to view it."},
+                status=403
+            )
+        
+        # Check if requester is the profile owner
+        if request.user.id != user_id:
+            # Check if they are friends (mutual accepted friend request)
+            is_friend = FriendRequest.objects.filter(
+                status='accepted'
+            ).filter(
+                (Q(from_user=request.user, to_user=user) | Q(from_user=user, to_user=request.user))
+            ).exists()
+            
+            if not is_friend:
+                return Response(
+                    {"detail": "This profile is private. You must be a friend to view it."},
+                    status=403
+                )
     
     profile_pic = profile.profile_picture.url if profile.profile_picture else None
     
@@ -208,6 +260,18 @@ def trip_user_suggestions(request):
     suggestions = []
     for profile in all_profiles:
         try:
+            # ✅ Privacy check: Skip if private profile (unless they are friends)
+            if not profile.public_profile:
+                is_friend = FriendRequest.objects.filter(
+                    status='accepted'
+                ).filter(
+                    (Q(from_user=request.user, to_user=profile.user) | Q(from_user=profile.user, to_user=request.user))
+                ).exists()
+                
+                if not is_friend:
+                    # Skip this user - private profile and not a friend
+                    continue
+            
             similarity = calculate_user_similarity(current_profile, profile)
             
             # Only suggest users with > 0.3 (30%) similarity
@@ -236,6 +300,9 @@ def trip_user_suggestions(request):
 @permission_classes([IsAuthenticated])
 def send_friend_request(request, user_id):
     """Send a friend request to another user"""
+    from datetime import timedelta
+    from django.utils import timezone
+    
     # Check if user has approved KYC
     try:
         kyc_profile = request.user.kyc_profile
@@ -265,10 +332,34 @@ def send_friend_request(request, user_id):
     ).first()
     
     if existing_request:
-        return Response({
-            "detail": f"Friend request already {existing_request.status}",
-            "status": existing_request.status
-        }, status=400)
+        # If rejected, check if cooldown period has passed (7 days)
+        if existing_request.status == 'rejected':
+            cooldown_period = timedelta(days=7)
+            time_since_rejection = timezone.now() - existing_request.updated_at
+            
+            if time_since_rejection < cooldown_period:
+                remaining_time = cooldown_period - time_since_rejection
+                days_remaining = remaining_time.days
+                hours_remaining = remaining_time.seconds // 3600
+                
+                return Response({
+                    "detail": f"Friend request was rejected. You can send another request in {days_remaining}d {hours_remaining}h",
+                    "status": "rejected",
+                    "cooldown_remaining": {
+                        "days": days_remaining,
+                        "hours": hours_remaining,
+                        "total_seconds": remaining_time.total_seconds()
+                    }
+                }, status=400)
+            else:
+                # Cooldown has passed, delete the old request and allow new one
+                existing_request.delete()
+        else:
+            # Pending or accepted - cannot send another request
+            return Response({
+                "detail": f"Friend request already {existing_request.status}",
+                "status": existing_request.status
+            }, status=400)
     
     # Check for reverse request (to_user sent to request.user)
     reverse_request = FriendRequest.objects.filter(

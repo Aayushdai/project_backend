@@ -8,6 +8,7 @@ class Message(models.Model):
     trip = models.ForeignKey(Trip, on_delete=models.CASCADE, null=True, blank=True)
     content = models.TextField()
     timestamp = models.DateTimeField(auto_now_add=True)
+    is_system = models.BooleanField(default=False, help_text="System message (e.g., user joined/left)")
     
     class Meta:
         ordering = ['timestamp']

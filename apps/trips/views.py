@@ -70,18 +70,47 @@ class TripListAPIView(generics.ListCreateAPIView):
         return super().list(request, *args, **kwargs)
 
     def get_queryset(self):
+        from apps.users.models import FriendRequest
+        
         user_profile = self.request.user.userprofile
         today = date.today()
         
-        # Get all future public trips (same for all users)
-        # PLUS trips where user is creator or participant (to see their own trips)
-        queryset = Trip.objects.filter(
-            Q(end_date__gte=today, is_public=True) |  # Future public trips visible to everyone
-            Q(creator=user_profile) |                  # User's own trips (regardless of date or privacy)
-            Q(participants=user_profile)               # User's joined trips (regardless of date)
-        ).distinct().order_by('-start_date')
+        # Start with public trips
+        queryset = Trip.objects.filter(end_date__gte=today, is_public=True)
         
-        return queryset
+        # Add user's own trips (regardless of date or privacy)
+        queryset = queryset | Trip.objects.filter(creator=user_profile)
+        queryset = queryset | Trip.objects.filter(participants=user_profile)
+        
+        # Now filter by share_trip_activity privacy preference
+        # Get all trips first
+        all_trips = queryset.distinct()
+        
+        # For trips where user is NOT the creator/participant, check share_trip_activity
+        visible_trips = []
+        for trip in all_trips:
+            # If user is the creator or participant, always show
+            if trip.creator == user_profile or user_profile in trip.participants.all():
+                visible_trips.append(trip.id)
+            else:
+                # Check friendship
+                is_friend = FriendRequest.objects.filter(
+                    status='accepted'
+                ).filter(
+                    Q(from_user=self.request.user, to_user=trip.creator.user) | 
+                    Q(from_user=trip.creator.user, to_user=self.request.user)
+                ).exists()
+                
+                # If friends, can always see the trip (regardless of share_trip_activity)
+                if is_friend:
+                    visible_trips.append(trip.id)
+                # If not friends, only show if:
+                # 1. Trip is public AND
+                # 2. Creator has share_trip_activity enabled
+                elif trip.is_public and trip.creator.share_trip_activity:
+                    visible_trips.append(trip.id)
+        
+        return Trip.objects.filter(id__in=visible_trips).order_by('-start_date')
 
     def get_queryset_qs(self):
         """Return QuerySet version (used by DRF pagination if needed)"""

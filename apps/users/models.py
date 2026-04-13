@@ -99,6 +99,17 @@ class UserProfile(models.Model):
     min_match_age = models.IntegerField(default=18, help_text="Minimum age for travel companions")
     max_match_age = models.IntegerField(default=100, help_text="Maximum age for travel companions")
 
+    # ✅ Privacy Preferences
+    public_profile = models.BooleanField(default=True, help_text="Allow others to see your profile")
+    searchable_by_email = models.BooleanField(default=True, help_text="Allow users to find you by email")
+    show_online_status = models.BooleanField(default=True, help_text="Show when you're online")
+    share_trip_activity = models.BooleanField(default=True, help_text="Share your trip activity with others")
+
+    # ✅ Notification Preferences
+    email_notifications = models.BooleanField(default=True, help_text="Receive email notifications")
+    trip_updates = models.BooleanField(default=True, help_text="Get notified about trip updates")
+    friend_requests = models.BooleanField(default=True, help_text="Get notified about friend requests")
+
     preference_vector = models.JSONField(null=True, blank=True)
 
     def __str__(self):

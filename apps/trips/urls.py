@@ -2,14 +2,15 @@ from django.urls import path
 from .views import (
     TripListAPIView, TripDetailAPIView, DestinationListAPIView, DestinationDetailAPIView, 
     CityListAPIView, TripHistoryAPIView, TripExpenseBudgetListAPIView, TripExpenseBudgetDetailAPIView,
-    TripReviewListCreateAPIView, JoinTripByInviteCodeAPIView, GenerateInviteLinkAPIView,
+    TripReviewListCreateAPIView, TripReviewDetailAPIView, JoinTripByInviteCodeAPIView, GenerateInviteLinkAPIView,
     TripInvitationListAPIView, TripInvitationDeleteAPIView, MyInvitationsListAPIView,
     RespondToInvitationAPIView, NotificationListAPIView, UnreadNotificationCountAPIView,
-    NotificationMarkAsReadAPIView, NotificationMarkAllAsReadAPIView
+    NotificationMarkAsReadAPIView, NotificationMarkAllAsReadAPIView, RecommendedTripsAPIView
 )
 
 urlpatterns = [
     path('', TripListAPIView.as_view(), name='trip-list'),
+    path('recommended/', RecommendedTripsAPIView.as_view(), name='recommended-trips'),
     path('history/', TripHistoryAPIView.as_view(), name='trip-history'),
     path('join/<str:invite_code>/', JoinTripByInviteCodeAPIView.as_view(), name='join-trip-by-code'),
     path('notifications/', NotificationListAPIView.as_view(), name='notifications'),
@@ -25,6 +26,7 @@ urlpatterns = [
     path('<int:trip_id>/invitations/<int:pk>/', TripInvitationDeleteAPIView.as_view(), name='trip-invitation-delete'),
     path('<int:pk>/', TripDetailAPIView.as_view(), name='trip-detail'),
     path('expenses/<int:pk>/', TripExpenseBudgetDetailAPIView.as_view(), name='trip-expense-detail'),
+    path('reviews/<int:pk>/', TripReviewDetailAPIView.as_view(), name='trip-review-detail'),
     path('destinations/', DestinationListAPIView.as_view(), name='destination-list'),
     path('destinations/<int:id>/', DestinationDetailAPIView.as_view(), name='destination-detail'),
     path('cities/', CityListAPIView.as_view(), name='city-list'),

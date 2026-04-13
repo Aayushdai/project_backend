@@ -9,6 +9,10 @@ os.environ['EMAIL_BACKEND'] = 'django.core.mail.backends.dummy.EmailBackend'
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'travel_companion.settings')
 django.setup()
 
+# Disable signals during population
+from django.db.models.signals import post_save
+from django.contrib.auth.models import User as DjangoUser
+
 from django.db import transaction
 from apps.users.models import Interest, ConstraintTag, UserProfile
 from apps.trips.models import Trip, City, TripExpenseBudget
@@ -178,6 +182,10 @@ print(f"✓ Found {constraint_tags.count()} constraint tags")
 print("\n👥 Creating 100 Nepalese Users...")
 created_users = []
 
+# Disconnect the post_save signal to avoid email sending
+from apps.users.signals import create_user_profile
+post_save.disconnect(create_user_profile, sender=DjangoUser)
+
 with transaction.atomic():
     for i in range(100):
         first_name = random.choice(nepali_first_names)
@@ -231,6 +239,9 @@ with transaction.atomic():
         
         if (i + 1) % 20 == 0:
             print(f"  ✓ Created {i + 1} users")
+
+# Reconnect the signal
+post_save.connect(create_user_profile, sender=DjangoUser)
 
 print(f"\n✓ Total users created: {len(created_users)}")
 

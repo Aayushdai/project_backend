@@ -7,9 +7,11 @@ from rest_framework.generics import ListAPIView
 from django.db.models import Q, Count, Case, When, IntegerField, F
 from .models import Trip, Destination, City, TripExpenseBudget, TripReview, TripInvitation, TripInviteLink, Notification
 from .forms import TripForm
-from .serializers import TripSerializer, DestinationSerializer, CitySerializer, TripExpenseBudgetSerializer, TripReviewSerializer, TripInvitationSerializer, TripInviteLinkSerializer, NotificationSerializer
+from .serializers import TripSerializer, DestinationSerializer, CitySerializer, TripExpenseBudgetSerializer, TripReviewSerializer, TripInvitationSerializer, TripInviteLinkSerializer, NotificationSerializer, RecommendedTripSerializer
+from .recommendation import get_recommended_trips
 from django.http import JsonResponse
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
+from django.utils import timezone
 from apps.kyc.permissions import IsKYCApproved
 import logging
 import uuid
@@ -188,7 +190,25 @@ class TripDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
                 "trip": TripSerializer(trip).data
             }, status=200)
 
-        # Default update behavior
+        elif action == 'update_description':
+            # Only creator can update description
+            if trip.creator != user_profile:
+                raise PermissionDenied("Only the trip creator can update the description.")
+            
+            description = request.data.get('description')
+            if description is not None:
+                trip.description = description
+                trip.save()
+            
+            return Response({
+                "message": "Trip description updated successfully",
+                "trip": TripSerializer(trip).data
+            }, status=200)
+
+        # Default update behavior (for other fields like title, start_date, etc.)
+        if trip.creator != user_profile:
+            raise PermissionDenied("Only the trip creator can update this trip.")
+        
         return super().patch(request, *args, **kwargs)
 
 
@@ -285,7 +305,7 @@ def get_destinations(request):
 
 
 class TripReviewListCreateAPIView(generics.ListCreateAPIView):
-    """API view for creating and retrieving reviews for a trip"""
+    """API view for creating and retrieving reviews for a trip. Users can only have one review per trip."""
     serializer_class = TripReviewSerializer
     permission_classes = [permissions.IsAuthenticated, IsKYCApproved]
     
@@ -295,7 +315,7 @@ class TripReviewListCreateAPIView(generics.ListCreateAPIView):
         return TripReview.objects.filter(trip_id=trip_id)
     
     def perform_create(self, serializer):
-        """Create a review, ensuring user is a participant of the trip"""
+        """Create or update a review, ensuring user is a participant of the trip"""
         trip_id = self.kwargs.get('trip_id')
         trip = get_object_or_404(Trip, id=trip_id)
         user_profile = self.request.user.userprofile
@@ -309,8 +329,30 @@ class TripReviewListCreateAPIView(generics.ListCreateAPIView):
         if not is_participant:
             raise PermissionDenied("Only trip participants can leave reviews.")
         
-        # Save the review with the current user as reviewer
-        serializer.save(trip=trip, reviewer=user_profile)
+        # Check if user already has a review for this trip
+        existing_review = TripReview.objects.filter(trip=trip, reviewer=user_profile).first()
+        
+        if existing_review:
+            # Update existing review
+            serializer.instance = existing_review
+            serializer.save()
+        else:
+            # Create new review
+            serializer.save(trip=trip, reviewer=user_profile)
+
+
+class TripReviewDetailAPIView(generics.DestroyAPIView):
+    """API view for deleting a review. Only the reviewer can delete their own review."""
+    serializer_class = TripReviewSerializer
+    permission_classes = [permissions.IsAuthenticated, IsKYCApproved]
+    queryset = TripReview.objects.all()
+
+    def get_object(self):
+        review = super().get_object()
+        # Only allow deletion if user is the reviewer
+        if review.reviewer != self.request.user.userprofile:
+            raise PermissionDenied("You can only delete your own review.")
+        return review
 
 
 class JoinTripByInviteCodeAPIView(generics.GenericAPIView):
@@ -500,14 +542,23 @@ class RespondToInvitationAPIView(generics.UpdateAPIView):
 
 
 class NotificationListAPIView(generics.ListAPIView):
-    """Get all notifications for the current user"""
+    """Get all notifications for the current user (excluding old read notifications)"""
     serializer_class = NotificationSerializer
     permission_classes = [permissions.IsAuthenticated, IsKYCApproved]
     
     def get_queryset(self):
-        """Get all notifications for current user, ordered by most recent"""
+        """Get notifications for current user, excluding those read more than 24 hours ago"""
         user_profile = self.request.user.userprofile
-        return Notification.objects.filter(recipient=user_profile).order_by('-created_at')
+        cutoff_time = timezone.now() - timedelta(hours=24)
+        
+        # Get unread notifications or recently read ones (within 24 hours)
+        notifications = Notification.objects.filter(
+            recipient=user_profile
+        ).filter(
+            Q(is_read=False) | Q(is_read_at__gte=cutoff_time)
+        ).order_by('-created_at')
+        
+        return notifications
 
 
 class UnreadNotificationCountAPIView(generics.RetrieveAPIView):
@@ -531,7 +582,7 @@ class NotificationMarkAsReadAPIView(generics.UpdateAPIView):
     queryset = Notification.objects.all()
     
     def patch(self, request, *args, **kwargs):
-        """Mark notification as read"""
+        """Mark notification as read and set the read timestamp"""
         notification = self.get_object()
         
         # Only the recipient can mark as read
@@ -539,6 +590,7 @@ class NotificationMarkAsReadAPIView(generics.UpdateAPIView):
             raise PermissionDenied("You can only mark your own notifications as read.")
         
         notification.is_read = True
+        notification.is_read_at = timezone.now()
         notification.save()
         return Response({
             'message': 'Notification marked as read',
@@ -556,8 +608,97 @@ class NotificationMarkAllAsReadAPIView(generics.UpdateAPIView):
         count = Notification.objects.filter(
             recipient=user_profile,
             is_read=False
-        ).update(is_read=True)
+        ).update(is_read=True, is_read_at=timezone.now())
         return Response({
             'message': f'{count} notifications marked as read',
             'count': count
+        })
+
+
+class RecommendedTripsAPIView(generics.ListAPIView):
+    """Get personalized trip recommendations based on interest matching"""
+    serializer_class = RecommendedTripSerializer
+    permission_classes = [permissions.IsAuthenticated, IsKYCApproved]
+    
+    def get_queryset(self):
+        """Get recommended trips for current user"""
+        user_profile = self.request.user.userprofile
+        today = date.today()
+        
+        # Get publicly available future trips
+        trips = Trip.objects.filter(
+            is_public=True,
+            end_date__gte=today,
+            is_completed=False
+        ).exclude(creator=user_profile).exclude(participants=user_profile)
+        
+        return trips
+    
+    def get_serializer_context(self):
+        """Add match data to serializer context"""
+        context = super().get_serializer_context()
+        user_profile = self.request.user.userprofile
+        
+        # Get recommendation scores
+        destination_filter = self.request.query_params.get('destination')
+        limit = int(self.request.query_params.get('limit', 20))
+        
+        recommended = get_recommended_trips(
+            user_profile,
+            trips_queryset=self.get_queryset(),
+            destination=destination_filter,
+            limit=limit
+        )
+        
+        # Build match_data dict for serializer
+        match_data = {}
+        for item in recommended:
+            trip = item['trip']
+            match_data[trip.id] = {
+                'match_count': item['match_count'],
+                'avg_similarity': item['avg_similarity'],
+                'best_match': item['best_match'],
+                'score': item['score']
+            }
+        
+        context['match_data'] = match_data
+        return context
+    
+    def list(self, request, *args, **kwargs):
+        """Override list to return sorted recommendations"""
+        user_profile = request.user.userprofile
+        destination_filter = request.query_params.get('destination')
+        limit = int(request.query_params.get('limit', 20))
+        
+        # Get recommended trips
+        recommended = get_recommended_trips(
+            user_profile,
+            trips_queryset=self.get_queryset(),
+            destination=destination_filter,
+            limit=limit
+        )
+        
+        # Build match_data for context
+        match_data = {}
+        trips_to_serialize = []
+        for item in recommended:
+            trip = item['trip']
+            trips_to_serialize.append(trip)
+            match_data[trip.id] = {
+                'match_count': item['match_count'],
+                'avg_similarity': item['avg_similarity'],
+                'best_match': item['best_match'],
+                'score': item['score']
+            }
+        
+        # Serialize with context
+        serializer = self.get_serializer(
+            trips_to_serialize,
+            many=True,
+            context={**self.get_serializer_context(), 'match_data': match_data}
+        )
+        
+        return Response({
+            'count': len(recommended),
+            'results': serializer.data
         })

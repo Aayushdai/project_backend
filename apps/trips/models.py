@@ -224,6 +224,7 @@ class Notification(models.Model):
     notification_type = models.CharField(max_length=30, choices=NOTIFICATION_TYPE_CHOICES)
     message = models.TextField()
     is_read = models.BooleanField(default=False)
+    is_read_at = models.DateTimeField(null=True, blank=True, help_text="Timestamp when notification was marked as read")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     

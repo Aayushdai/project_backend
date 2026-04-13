@@ -248,3 +248,52 @@ class NotificationSerializer(serializers.ModelSerializer):
             return f'{days}d ago'
         else:
             return obj.created_at.strftime('%b %d')
+
+
+class RecommendedTripSerializer(TripSerializer):
+    """Extended Trip serializer with recommendation matching scores"""
+    match_count = serializers.SerializerMethodField()
+    avg_similarity = serializers.SerializerMethodField()
+    best_match = serializers.SerializerMethodField()
+    recommendation_score = serializers.SerializerMethodField()
+    
+    class Meta(TripSerializer.Meta):
+        fields = TripSerializer.Meta.fields + [
+            'match_count', 'avg_similarity', 'best_match', 'recommendation_score'
+        ]
+    
+    def get_match_count(self, obj):
+        """Get number of members with good interest match (from context)"""
+        return self.context.get('match_data', {}).get(obj.id, {}).get('match_count', 0)
+    
+    def get_avg_similarity(self, obj):
+        """Get average similarity score (from context)"""
+        return self.context.get('match_data', {}).get(obj.id, {}).get('avg_similarity', 0.0)
+    
+    def get_best_match(self, obj):
+        """Get best individual match score (from context)"""
+        return self.context.get('match_data', {}).get(obj.id, {}).get('best_match', 0.0)
+    
+    def get_recommendation_score(self, obj):
+        """Get weighted recommendation score (from context)"""
+        return self.context.get('match_data', {}).get(obj.id, {}).get('score', 0.0)
+    
+    def get_time_ago(self, obj):
+        """Return human-readable time ago"""
+        from django.utils.timezone import now
+        from datetime import timedelta
+        
+        age = now() - obj.created_at
+        if age < timedelta(minutes=1):
+            return 'just now'
+        elif age < timedelta(hours=1):
+            minutes = age.seconds // 60
+            return f'{minutes}m ago'
+        elif age < timedelta(days=1):
+            hours = age.seconds // 3600
+            return f'{hours}h ago'
+        elif age < timedelta(days=7):
+            days = age.days
+            return f'{days}d ago'
+        else:
+            return obj.created_at.strftime('%b %d')

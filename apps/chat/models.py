@@ -9,6 +9,8 @@ class Message(models.Model):
     content = models.TextField()
     timestamp = models.DateTimeField(auto_now_add=True)
     is_system = models.BooleanField(default=False, help_text="System message (e.g., user joined/left)")
+    is_read = models.BooleanField(default=False)
+    is_read_at = models.DateTimeField(null=True, blank=True, help_text="Timestamp when message was marked as read")
     
     class Meta:
         ordering = ['timestamp']

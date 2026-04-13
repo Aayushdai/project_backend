@@ -3,7 +3,9 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.db.models import Q
-from .models import ChatMessage
+from django.utils import timezone
+from datetime import timedelta
+from .models import ChatMessage, Message
 from apps.users.models import UserProfile
 from apps.trips.models import City, Destination
 from apps.kyc.permissions import IsKYCApproved
@@ -225,17 +227,16 @@ class ChatViewSet(viewsets.ModelViewSet):
 # DIRECT MESSAGING (Friend-to-Friend & Group Chat)
 # ═══════════════════════════════════════════════════════════════
 
-from .models import Message
-
 class MessageSerializer(serializers.ModelSerializer):
     sender_name = serializers.SerializerMethodField()
     receiver_name = serializers.SerializerMethodField()
     trip_name = serializers.SerializerMethodField()
     isSent = serializers.SerializerMethodField()
+    profile_picture = serializers.SerializerMethodField()
     
     class Meta:
         model = Message
-        fields = ['id', 'sender', 'sender_name', 'receiver', 'receiver_name', 'trip', 'trip_name', 'content', 'timestamp', 'isSent', 'is_system']
+        fields = ['id', 'sender', 'sender_name', 'receiver', 'receiver_name', 'trip', 'trip_name', 'content', 'timestamp', 'isSent', 'is_system', 'is_read', 'profile_picture']
         read_only_fields = ['sender', 'receiver', 'trip', 'timestamp', 'is_system']
     
     def get_sender_name(self, obj):
@@ -246,6 +247,20 @@ class MessageSerializer(serializers.ModelSerializer):
     
     def get_trip_name(self, obj):
         return obj.trip.title if obj.trip else None
+    
+    def get_profile_picture(self, obj):
+        """Get sender's profile picture URL"""
+        if obj.sender and obj.sender.profile_picture:
+            pic = str(obj.sender.profile_picture)
+            # If it's a relative path, prepend the media URL
+            if not pic.startswith('http'):
+                from django.conf import settings
+                # Remove leading slash if present
+                if pic.startswith('/'):
+                    return f"http://localhost:8000{pic}"
+                return f"http://localhost:8000{settings.MEDIA_URL}{pic}"
+            return pic
+        return None
     
     def get_isSent(self, obj):
         request = self.context.get('request')
@@ -469,4 +484,115 @@ class MessageViewSet(viewsets.ModelViewSet):
             'results': serializer.data,
             'count': len(serializer.data)
         })
+
+    @action(detail=False, methods=['get'])
+    def unread(self, request):
+        """Get unread messages for the current user from friends and groups"""
+        try:
+            user_profile = UserProfile.objects.get(user=request.user)
+            from apps.users.models import FriendRequest
+            
+            cutoff_time = timezone.now() - timedelta(hours=24)
+            
+            # Get unread DIRECT messages where:
+            # 1. User is the receiver
+            # 2. Sender and receiver are accepted friends
+            direct_unread = Message.objects.filter(
+                receiver=user_profile,
+                trip__isnull=True,  # Direct message (no trip)
+                is_read=False,
+                is_system=False
+            ).exclude(sender=user_profile)  # Exclude own messages
+            
+            # Filter to only show messages from accepted friends
+            friend_direct_unread = []
+            for msg in direct_unread:
+                # Check if sender and receiver are friends (accepted in both directions)
+                is_friend = FriendRequest.objects.filter(
+                    from_user=msg.sender.user,
+                    to_user=request.user,
+                    status='accepted'
+                ).exists() or FriendRequest.objects.filter(
+                    from_user=request.user,
+                    to_user=msg.sender.user,
+                    status='accepted'
+                ).exists()
+                
+                if is_friend:
+                    friend_direct_unread.append(msg.id)
+            
+            # Get unread GROUP messages where user is a participant
+            group_unread = Message.objects.filter(
+                trip__participants=user_profile,
+                trip__isnull=False,  # Group message (has trip)
+                is_read=False,
+                is_system=False
+            ).exclude(sender=user_profile).distinct()
+            
+            # Combine friendly direct messages and group messages
+            all_unread_ids = friend_direct_unread
+            unread_messages = Message.objects.filter(
+                Q(id__in=all_unread_ids) | Q(id__in=group_unread.values_list('id', flat=True))
+            ).distinct().order_by('-timestamp')
+            
+            # Also include recently read messages (within 24 hours) for seamless notification flow
+            # For direct: only from friends
+            # For groups: only from trips user is in
+            recently_read_direct = Message.objects.filter(
+                receiver=user_profile,
+                trip__isnull=True,
+                is_read=True,
+                is_read_at__gte=cutoff_time,
+                is_system=False
+            ).exclude(sender=user_profile)
+            
+            recently_read_direct_ids = []
+            for msg in recently_read_direct:
+                is_friend = FriendRequest.objects.filter(
+                    from_user=msg.sender.user,
+                    to_user=request.user,
+                    status='accepted'
+                ).exists() or FriendRequest.objects.filter(
+                    from_user=request.user,
+                    to_user=msg.sender.user,
+                    status='accepted'
+                ).exists()
+                
+                if is_friend:
+                    recently_read_direct_ids.append(msg.id)
+            
+            recently_read_group = Message.objects.filter(
+                trip__participants=user_profile,
+                trip__isnull=False,
+                is_read=True,
+                is_read_at__gte=cutoff_time,
+                is_system=False
+            ).exclude(sender=user_profile).distinct()
+            
+            # Combine all notifications
+            all_notification_ids = all_unread_ids + recently_read_direct_ids + list(group_unread.values_list('id', flat=True)) + list(recently_read_group.values_list('id', flat=True))
+            all_notifications = Message.objects.filter(
+                id__in=all_notification_ids
+            ).distinct().order_by('-timestamp')
+            
+            serializer = self.get_serializer(all_notifications, many=True, context={'request': request})
+            return Response({
+                'results': serializer.data,
+                'count': len(serializer.data)
+            })
+        except UserProfile.DoesNotExist:
+            return Response({'error': 'User profile not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    @action(detail=True, methods=['patch'])
+    def mark_as_read(self, request, pk=None):
+        """Mark a message as read and set the read timestamp"""
+        try:
+            message = Message.objects.get(id=pk)
+            message.is_read = True
+            message.is_read_at = timezone.now()
+            message.save()
+            serializer = self.get_serializer(message, context={'request': request})
+            return Response(serializer.data)
+        except Message.DoesNotExist:
+            return Response({'error': 'Message not found'}, status=status.HTTP_404_NOT_FOUND)
 

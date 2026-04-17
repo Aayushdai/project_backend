@@ -7,10 +7,13 @@ from rest_framework_simplejwt.views import (
     TokenRefreshView,
 )
 
-# Customize Django Admin Site
-admin.site.site_header = "TCS Admin"
-admin.site.site_title = "TCS Admin"
-admin.site.index_title = "Welcome to TCS Admin"
+# Import after django.conf is ready
+import os
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'travel_companion.settings')
+
+# Patch the admin site
+from core.admin import patch_admin_site
+patch_admin_site()
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -20,6 +23,7 @@ urlpatterns = [
     path('api/chat/', include('apps.chat.urls_new')),
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('', include('core.urls')),  # Stats and public stats dashboard
 ]
 
 if settings.DEBUG:

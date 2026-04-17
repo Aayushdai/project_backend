@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Trip, City, ItineraryItem, Destination, TripExpenseBudget, TripReview, TripInvitation, TripInviteLink, Notification
+from .models import Trip, City, ItineraryItem, Destination, TripExpenseBudget, TripReview, TripPhoto, TripInvitation, TripInviteLink, Notification
 from apps.users.models import UserProfile, ConstraintTag
 import json
 
@@ -17,7 +17,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = UserProfile
-        fields = ['id', 'user', 'bio', 'first_name', 'last_name', 'username']
+        fields = ['id', 'user', 'bio', 'first_name', 'last_name', 'username', 'profile_picture']
 
 
 class ConstraintTagSerializer(serializers.ModelSerializer):
@@ -139,15 +139,35 @@ class TripReviewSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'reviewer_name', 'created_at', 'updated_at']
 
 
+class TripPhotoSerializer(serializers.ModelSerializer):
+    """Serializer for trip photos"""
+    uploaded_by_name = serializers.CharField(source='uploaded_by.user.get_full_name', read_only=True)
+    uploaded_by_avatar = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = TripPhoto
+        fields = ['id', 'image', 'caption', 'uploaded_by', 'uploaded_by_name', 'uploaded_by_avatar', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'uploaded_by', 'uploaded_by_name', 'created_at', 'updated_at']
+    
+    def get_uploaded_by_avatar(self, obj):
+        """Return profile picture URL of uploader"""
+        if obj.uploaded_by.profile_picture:
+            url = obj.uploaded_by.profile_picture.url
+            return url if url.startswith('http') else f"http://127.0.0.1:8000{url}"
+        return None
+
+
 class TripInvitationSerializer(serializers.ModelSerializer):
     """Serializer for trip invitations"""
     invited_user_name = serializers.CharField(source='invited_user.user.get_full_name', read_only=True)
     invited_user_email = serializers.CharField(source='invited_user.user.email', read_only=True)
     invited_by_name = serializers.CharField(source='invited_by.user.get_full_name', read_only=True)
+    invited_by = serializers.SerializerMethodField()
     avatar = serializers.SerializerMethodField()
     email = serializers.CharField(source='invited_user.user.email', read_only=True)  # Alias for pending tab display
     sentAt = serializers.SerializerMethodField()
     is_expired = serializers.BooleanField(read_only=True)
+    trip = serializers.SerializerMethodField()
     
     class Meta:
         model = TripInvitation
@@ -156,7 +176,45 @@ class TripInvitationSerializer(serializers.ModelSerializer):
             'invited_by', 'invited_by_name', 'status', 'role', 'avatar', 'email', 'sentAt',
             'created_at', 'expires_at', 'accepted_at', 'rejected_at', 'is_expired'
         ]
-        read_only_fields = ['id', 'trip', 'created_at', 'expires_at', 'accepted_at', 'rejected_at', 'invited_by', 'is_expired']
+        read_only_fields = ['id', 'created_at', 'expires_at', 'accepted_at', 'rejected_at', 'is_expired']
+    
+    def get_trip(self, obj):
+        """Return full trip data"""
+        if obj.trip:
+            try:
+                cover_image_url = obj.trip.cover_image.url if obj.trip.cover_image else None
+            except:
+                cover_image_url = None
+                
+            return {
+                'id': obj.trip.id,
+                'title': obj.trip.title,
+                'destination': {
+                    'name': obj.trip.destination.name if obj.trip.destination else 'Destination unknown',
+                    'country': obj.trip.destination.country if obj.trip.destination else '',
+                },
+                'start_date': obj.trip.start_date,
+                'end_date': obj.trip.end_date,
+                'description': obj.trip.description,
+                'cover_image': cover_image_url,
+            }
+        return None
+    
+    def get_invited_by(self, obj):
+        """Return invited_by user details"""
+        try:
+            if obj.invited_by and obj.invited_by.user:
+                return {
+                    'id': obj.invited_by.id,
+                    'user': {
+                        'first_name': obj.invited_by.user.first_name or '',
+                        'last_name': obj.invited_by.user.last_name or '',
+                        'email': obj.invited_by.user.email or '',
+                    }
+                }
+        except:
+            pass
+        return None
     
     def get_avatar(self, obj):
         """Return user's initials as avatar"""

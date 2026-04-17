@@ -1,0 +1,273 @@
+{% extends "admin/base_site.html" %}
+
+{% block extrastyle %}
+    <style>
+        body {
+            background-color: #f5f5f5;
+        }
+        
+        .visual-container {
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .visual-header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding: 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        
+        .visual-title {
+            font-size: 32px;
+            font-weight: bold;
+            margin: 0;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            letter-spacing: 2px;
+        }
+        
+        .visual-subtitle {
+            font-size: 13px;
+            margin-top: 8px;
+            opacity: 0.9;
+            letter-spacing: 1px;
+        }
+        
+        .stats-overview {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 15px;
+            margin-bottom: 40px;
+        }
+        
+        .stat-mini-card {
+            background: white;
+            padding: 18px;
+            border-radius: 8px;
+            border-left: 4px solid #4a7ba7;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            text-align: center;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .stat-mini-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+        }
+        
+        .stat-mini-card:nth-child(2) { border-left-color: #7fbb8e; }
+        .stat-mini-card:nth-child(3) { border-left-color: #e8a86b; }
+        .stat-mini-card:nth-child(4) { border-left-color: #5a9fd4; }
+        .stat-mini-card:nth-child(5) { border-left-color: #a89bb6; }
+        .stat-mini-card:nth-child(6) { border-left-color: #6eb5a0; }
+        .stat-mini-card:nth-child(7) { border-left-color: #e05555; }
+        
+        .stat-mini-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+            margin: 8px 0;
+        }
+        
+        .stat-mini-label {
+            font-size: 10px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 600;
+        }
+        
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+            gap: 25px;
+            margin-bottom: 40px;
+        }
+        
+        .chart-big-card {
+            background: white;
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            border: 1px solid #e0e0e0;
+            transition: box-shadow 0.3s;
+            min-height: 400px;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .chart-big-card:hover {
+            box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+        }
+        
+        .chart-title-big {
+            font-size: 13px;
+            font-weight: 700;
+            color: #333;
+            margin-bottom: 15px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+        
+        .chart-wrapper-big {
+            position: relative;
+            height: auto;
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .chart-wrapper-big img {
+            width: 100%;
+            height: auto;
+            border-radius: 4px;
+            max-height: 350px;
+            object-fit: contain;
+        }
+        
+        .back-to-dashboard {
+            margin-bottom: 20px;
+        }
+        
+        .back-to-dashboard a {
+            display: inline-block;
+            padding: 10px 20px;
+            background-color: #667eea;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            font-weight: 600;
+            font-size: 12px;
+            transition: background-color 0.2s;
+        }
+        
+        .back-to-dashboard a:hover {
+            background-color: #764ba2;
+        }
+        
+        .error-message {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 20px 0;
+        }
+        
+        @media (max-width: 1200px) {
+            .charts-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .charts-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .visual-title {
+                font-size: 24px;
+            }
+        }
+    </style>
+{% endblock %}
+
+{% block content %}
+<div class="visual-container">
+    <div class="back-to-dashboard">
+        <a href="{% url 'admin:index' %}">← Back to Dashboard</a>
+    </div>
+    
+    <div class="visual-header">
+        <h1 class="visual-title">Visual Analytics</h1>
+        <p class="visual-subtitle">COMPREHENSIVE PLATFORM INSIGHTS</p>
+    </div>
+    
+    {% if error %}
+    <div class="error-message">
+        <strong>Error:</strong> {{ error }}
+    </div>
+    {% else %}
+    
+    <!-- Quick Stats Overview -->
+    <div class="stats-overview">
+        <div class="stat-mini-card">
+            <div class="stat-mini-label">Total Users</div>
+            <div class="stat-mini-value">{{ stats.total_users }}</div>
+        </div>
+        <div class="stat-mini-card">
+            <div class="stat-mini-label">Active Users</div>
+            <div class="stat-mini-value">{{ stats.active_users }}</div>
+        </div>
+        <div class="stat-mini-card">
+            <div class="stat-mini-label">Deleted</div>
+            <div class="stat-mini-value">{{ stats.deleted_accounts }}</div>
+        </div>
+        <div class="stat-mini-card">
+            <div class="stat-mini-label">Total Trips</div>
+            <div class="stat-mini-value">{{ stats.total_trips }}</div>
+        </div>
+        <div class="stat-mini-card">
+            <div class="stat-mini-label">Completed</div>
+            <div class="stat-mini-value">{{ stats.completed_trips }}</div>
+        </div>
+        <div class="stat-mini-card">
+            <div class="stat-mini-label">Verified</div>
+            <div class="stat-mini-value">{{ stats.verified_users }}</div>
+        </div>
+        <div class="stat-mini-card">
+            <div class="stat-mini-label">Non-Verified</div>
+            <div class="stat-mini-value">{{ stats.non_verified_users }}</div>
+        </div>
+    </div>
+    
+    <!-- Full Page Charts -->
+    <div class="charts-grid">
+        {% if chart_users %}
+        <div class="chart-big-card">
+            <div class="chart-title-big">📈 User Growth</div>
+            <div class="chart-wrapper-big">
+                <img src="{{ chart_users }}" alt="User Growth Chart">
+            </div>
+        </div>
+        {% endif %}
+        
+        {% if chart_trips %}
+        <div class="chart-big-card">
+            <div class="chart-title-big">🗺️ Trip Activity</div>
+            <div class="chart-wrapper-big">
+                <img src="{{ chart_trips }}" alt="Trip Activity Chart">
+            </div>
+        </div>
+        {% endif %}
+        
+        {% if chart_verified %}
+        <div class="chart-big-card">
+            <div class="chart-title-big">✅ Account Verification</div>
+            <div class="chart-wrapper-big">
+                <img src="{{ chart_verified }}" alt="Account Verification Chart">
+            </div>
+        </div>
+        {% endif %}
+        
+        {% if chart_deleted %}
+        <div class="chart-big-card">
+            <div class="chart-title-big">👤 Account Status</div>
+            <div class="chart-wrapper-big">
+                <img src="{{ chart_deleted }}" alt="Account Status Chart">
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    
+    {% endif %}
+    
+</div>
+{% endblock %}

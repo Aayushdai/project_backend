@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Platform Statistics Dashboard - Travel Companion</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary: "#ffd580";
+            --primary-bg: "#1a1400";
+            --text: "#fff";
+            --text-dim: "rgba(255,255,255,0.55)";
+            --text-muted: "rgba(255,255,255,0.4)";
+            --text-light: "rgba(255,255,255,0.45)";
+            --border: "rgba(255,255,255,0.1)";
+            --border-light: "rgba(255,255,255,0.08)";
+            --accent: "#93c5fd";
+            --accent-bg: "#020d1a";
+            --green-accent: "#86efac";
+            --green-accent-bg: "#021a0a";
+            --orange: "#f97316";
+            --bg: "#080c14";
+            --bg-light: "rgba(255,255,255,0.02)";
+            --bg-darker: "rgba(255,255,255,0.03)";
+        }
+
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: #080c14;
+            color: #fff;
+            overflow-x: hidden;
+        }
+
+        .header {
+            padding: 4rem 1rem 2rem;
+            text-align: center;
+            background: linear-gradient(135deg, rgba(255,213,128,0.05) 0%, rgba(147,197,253,0.05) 100%);
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            margin-bottom: 3rem;
+        }
+
+        .header h1 {
+            font-size: 3rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(135deg, #ffd580 0%, #93c5fd 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .header p {
+            font-size: 1rem;
+            color: rgba(255,255,255,0.6);
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            font-weight: 600;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 1rem;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 2rem;
+            color: rgba(255,255,255,0.5);
+        }
+
+        .error {
+            background: rgba(239,68,68,0.1);
+            border: 1px solid rgba(239,68,68,0.3);
+            color: #fca5a5;
+            padding: 1rem;
+            border-radius: 12px;
+            margin-bottom: 2rem;
+        }
+
+        /* ── STAT CARDS ── */
+        .stat-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 1rem;
+            margin-bottom: 3rem;
+        }
+
+        .stat-card {
+            background: rgba(255,255,255,0.02);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 16px;
+            padding: 1.5rem 1rem;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+
+        .stat-card:hover {
+            border-color: rgba(255,213,128,0.3);
+            background: rgba(255,213,128,0.05);
+            transform: translateY(-4px);
+        }
+
+        .stat-card .value {
+            font-family: 'Montserrat', sans-serif;
+            color: #ffd580;
+            font-weight: 700;
+            font-size: 1.6rem;
+            letter-spacing: -0.02em;
+            margin-bottom: 0.4rem;
+        }
+
+        .stat-card .label {
+            color: rgba(255,255,255,0.4);
+            font-size: 0.75rem;
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            font-weight: 700;
+        }
+
+        /* ── CHARTS ── */
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            margin-bottom: 3rem;
+        }
+
+        .chart-card {
+            background: rgba(255,255,255,0.02);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 20px;
+            padding: 2rem;
+            transition: all 0.3s ease;
+        }
+
+        .chart-card:hover {
+            border-color: rgba(255,213,128,0.3);
+            background: rgba(255,213,128,0.03);
+        }
+
+        .chart-title {
+            color: rgba(255,255,255,0.55);
+            font-family: 'Poppins', sans-serif;
+            font-size: 0.75rem;
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            font-weight: 700;
+            margin-bottom: 1rem;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 200px;
+        }
+
+        canvas {
+            max-height: 200px;
+        }
+
+        .footer {
+            text-align: center;
+            padding: 2rem;
+            color: rgba(255,255,255,0.3);
+            font-size: 0.85rem;
+            border-top: 1px solid rgba(255,255,255,0.08);
+            margin-top: 3rem;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .stat-card {
+            animation: fadeIn 0.6s ease forwards;
+        }
+
+        .stat-card:nth-child(1) { animation-delay: 0.05s; }
+        .stat-card:nth-child(2) { animation-delay: 0.1s; }
+        .stat-card:nth-child(3) { animation-delay: 0.15s; }
+        .stat-card:nth-child(4) { animation-delay: 0.2s; }
+        .stat-card:nth-child(5) { animation-delay: 0.25s; }
+        .stat-card:nth-child(6) { animation-delay: 0.3s; }
+        .stat-card:nth-child(7) { animation-delay: 0.35s; }
+
+        .chart-card {
+            animation: fadeIn 0.8s ease forwards;
+        }
+
+        .chart-card:nth-child(1) { animation-delay: 0.4s; }
+        .chart-card:nth-child(2) { animation-delay: 0.5s; }
+        .chart-card:nth-child(3) { animation-delay: 0.6s; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Platform Statistics</h1>
+        <p>By The Numbers</p>
+    </div>
+
+    <div class="container">
+        <div id="loading" class="loading">
+            <p>Loading statistics...</p>
+        </div>
+
+        <div id="content" style="display: none;">
+            <!-- Error Message -->
+            <div id="error" class="error" style="display: none;"></div>
+
+            <!-- ── STAT CARDS ── -->
+            <div class="stat-cards">
+                <div class="stat-card">
+                    <div class="value" id="totalUsers">0</div>
+                    <div class="label">Total Users</div>
+                </div>
+                <div class="stat-card">
+                    <div class="value" id="activeUsers">0</div>
+                    <div class="label">Active Users</div>
+                </div>
+                <div class="stat-card">
+                    <div class="value" id="deletedAccounts">0</div>
+                    <div class="label">Deleted Accounts</div>
+                </div>
+                <div class="stat-card">
+                    <div class="value" id="totalTrips">0</div>
+                    <div class="label">Total Trips</div>
+                </div>
+                <div class="stat-card">
+                    <div class="value" id="completedTrips">0</div>
+                    <div class="label">Completed Trips</div>
+                </div>
+                <div class="stat-card">
+                    <div class="value" id="verifiedUsers">0</div>
+                    <div class="label">Verified Accounts</div>
+                </div>
+                <div class="stat-card">
+                    <div class="value" id="nonVerifiedUsers">0</div>
+                    <div class="label">Non-Verified</div>
+                </div>
+            </div>
+
+            <!-- ── CHARTS ── -->
+            <div class="charts-grid">
+                <!-- Users Chart -->
+                <div class="chart-card">
+                    <p class="chart-title">User Growth</p>
+                    <div class="chart-container">
+                        <canvas id="usersChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Trips Chart -->
+                <div class="chart-card">
+                    <p class="chart-title">Trip Activity</p>
+                    <div class="chart-container">
+                        <canvas id="tripsChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Verification Chart -->
+                <div class="chart-card">
+                    <p class="chart-title">Account Verification</p>
+                    <div class="chart-container">
+                        <canvas id="verifiedChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Deleted Accounts Chart -->
+                <div class="chart-card">
+                    <p class="chart-title">Account Status</p>
+                    <div class="chart-container">
+                        <canvas id="deletedChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="footer">
+        <p>Real-time Platform Statistics | Last Updated: <span id="lastUpdated">--:--</span></p>
+    </div>
+
+    <script>
+        const apiUrl = '/api/stats/';
+        let chartsInitialized = false;
+        let chartInstances = {
+            usersChart: null,
+            tripsChart: null,
+            verifiedChart: null,
+            deletedChart: null
+        };
+
+        async function fetchStats() {
+            try {
+                const response = await fetch(apiUrl);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                
+                if (data.success) {
+                    updateStats(data.stats);
+                    initCharts(data.chart_data);
+                    updateLastUpdated();
+                    showContent();
+                } else {
+                    showError(data.error || 'Failed to fetch statistics');
+                }
+            } catch (error) {
+                console.error('Error fetching stats:', error);
+                showError('Failed to load statistics: ' + error.message);
+            }
+        }
+
+        function updateStats(stats) {
+            document.getElementById('totalUsers').textContent = stats.total_users.toLocaleString();
+            document.getElementById('activeUsers').textContent = stats.active_users.toLocaleString();
+            document.getElementById('deletedAccounts').textContent = stats.deleted_accounts.toLocaleString();
+            document.getElementById('totalTrips').textContent = stats.total_trips.toLocaleString();
+            document.getElementById('completedTrips').textContent = stats.completed_trips.toLocaleString();
+            document.getElementById('verifiedUsers').textContent = stats.verified_users.toLocaleString();
+            document.getElementById('nonVerifiedUsers').textContent = stats.non_verified_users.toLocaleString();
+        }
+
+        function initCharts(data) {
+            if (chartsInitialized) {
+                destroyCharts();
+            }
+
+            const months = data.months;
+            const chartOptions = {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false }
+                },
+                scales: {
+                    x: {
+                        ticks: { color: 'rgba(255,255,255,0.4)' },
+                        grid: { color: 'rgba(255,255,255,0.06)' }
+                    },
+                    y: {
+                        ticks: { color: 'rgba(255,255,255,0.4)' },
+                        grid: { color: 'rgba(255,255,255,0.06)' },
+                        beginAtZero: true
+                    }
+                }
+            };
+
+            // Users Chart
+            const usersCtx = document.getElementById('usersChart').getContext('2d');
+            chartInstances.usersChart = new window.Chart(usersCtx, {
+                type: 'line',
+                data: {
+                    labels: months,
+                    datasets: [
+                        {
+                            label: 'Total users',
+                            data: data.total_users,
+                            borderColor: '#ffd580',
+                            backgroundColor: 'rgba(255,213,128,0.08)',
+                            fill: true,
+                            tension: 0.4,
+                            borderWidth: 2,
+                            pointRadius: 3,
+                            pointBackgroundColor: '#ffd580'
+                        },
+                        {
+                            label: 'Active users',
+                            data: data.active_users,
+                            borderColor: '#93c5fd',
+                            backgroundColor: 'rgba(147,197,253,0.07)',
+                            fill: true,
+                            tension: 0.4,
+                            borderWidth: 2,
+                            borderDash: [5, 3],
+                            pointRadius: 3,
+                            pointBackgroundColor: '#93c5fd'
+                        }
+                    ]
+                },
+                options: chartOptions
+            });
+
+            // Trips Chart
+            const tripsCtx = document.getElementById('tripsChart').getContext('2d');
+            chartInstances.tripsChart = new window.Chart(tripsCtx, {
+                type: 'bar',
+                data: {
+                    labels: months,
+                    datasets: [
+                        {
+                            label: 'Total trips',
+                            data: data.total_trips,
+                            backgroundColor: 'rgba(147,197,253,0.7)',
+                            borderRadius: 4,
+                            borderColor: '#93c5fd',
+                            borderWidth: 1
+                        },
+                        {
+                            label: 'Completed trips',
+                            data: data.completed_trips,
+                            backgroundColor: 'rgba(134,239,172,0.6)',
+                            borderRadius: 4,
+                            borderColor: '#86efac',
+                            borderWidth: 1
+                        }
+                    ]
+                },
+                options: chartOptions
+            });
+
+            // Verification Chart
+            const verifiedCtx = document.getElementById('verifiedChart').getContext('2d');
+            chartInstances.verifiedChart = new window.Chart(verifiedCtx, {
+                type: 'line',
+                data: {
+                    labels: months,
+                    datasets: [
+                        {
+                            label: 'Verified',
+                            data: data.verified_users,
+                            borderColor: '#ffd580',
+                            backgroundColor: 'rgba(255,213,128,0.15)',
+                            fill: true,
+                            tension: 0.4,
+                            borderWidth: 2,
+                            pointRadius: 3,
+                            pointBackgroundColor: '#ffd580'
+                        },
+                        {
+                            label: 'Unverified',
+                            data: data.unverified_users,
+                            borderColor: 'rgba(255,255,255,0.3)',
+                            backgroundColor: 'rgba(255,255,255,0.04)',
+                            fill: true,
+                            tension: 0.4,
+                            borderWidth: 1.5,
+                            borderDash: [4, 3],
+                            pointRadius: 3,
+                            pointBackgroundColor: 'rgba(255,255,255,0.3)'
+                        }
+                    ]
+                },
+                options: chartOptions
+            });
+
+            // Deleted Accounts Chart
+            const deletedCtx = document.getElementById('deletedChart').getContext('2d');
+            chartInstances.deletedChart = new window.Chart(deletedCtx, {
+                type: 'line',
+                data: {
+                    labels: months,
+                    datasets: [
+                        {
+                            label: 'Active accounts',
+                            data: data.total_users.map((total, i) => total - data.deleted_accounts[i]),
+                            borderColor: '#86efac',
+                            backgroundColor: 'rgba(134,239,172,0.1)',
+                            fill: true,
+                            tension: 0.4,
+                            borderWidth: 2,
+                            pointRadius: 3,
+                            pointBackgroundColor: '#86efac'
+                        },
+                        {
+                            label: 'Deleted accounts',
+                            data: data.deleted_accounts,
+                            borderColor: '#f87171',
+                            backgroundColor: 'rgba(248,113,113,0.1)',
+                            fill: true,
+                            tension: 0.4,
+                            borderWidth: 2,
+                            pointRadius: 3,
+                            pointBackgroundColor: '#f87171'
+                        }
+                    ]
+                },
+                options: chartOptions
+            });
+
+            chartsInitialized = true;
+        }
+
+        function destroyCharts() {
+            Object.values(chartInstances).forEach(chart => {
+                if (chart) chart.destroy();
+            });
+            chartsInitialized = false;
+        }
+
+        function showContent() {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('content').style.display = 'block';
+        }
+
+        function showError(message) {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('error').textContent = '❌ Error: ' + message;
+            document.getElementById('error').style.display = 'block';
+        }
+
+        function updateLastUpdated() {
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString();
+            document.getElementById('lastUpdated').textContent = timeStr;
+        }
+
+        // Fetch stats on page load
+        window.addEventListener('load', fetchStats);
+
+        // Auto-refresh stats every 30 seconds
+        setInterval(fetchStats, 30000);
+    </script>
+</body>
+</html>

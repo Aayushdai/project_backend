@@ -260,30 +260,37 @@ def trip_user_suggestions(request):
     suggestions = []
     for profile in all_profiles:
         try:
+            # Check if they are friends
+            is_friend = FriendRequest.objects.filter(
+                status='accepted'
+            ).filter(
+                (Q(from_user=request.user, to_user=profile.user) | Q(from_user=profile.user, to_user=request.user))
+            ).exists()
+            
             # ✅ Privacy check: Skip if private profile (unless they are friends)
-            if not profile.public_profile:
-                is_friend = FriendRequest.objects.filter(
-                    status='accepted'
-                ).filter(
-                    (Q(from_user=request.user, to_user=profile.user) | Q(from_user=profile.user, to_user=request.user))
-                ).exists()
-                
-                if not is_friend:
-                    # Skip this user - private profile and not a friend
-                    continue
+            if not profile.public_profile and not is_friend:
+                # Skip this user - private profile and not a friend
+                continue
             
             similarity = calculate_user_similarity(current_profile, profile)
             
             # Only suggest users with > 0.3 (30%) similarity
             if similarity > 0.3:
                 user = profile.user
+                # Get profile picture URL
+                profile_pic_url = None
+                if profile.profile_picture:
+                    profile_pic_url = profile.profile_picture.url if hasattr(profile.profile_picture, 'url') else str(profile.profile_picture)
+                
                 suggestions.append({
                     'id': profile.id,
                     'name': f"{user.first_name} {user.last_name}".strip() or user.username,
                     'email': user.email,
                     'avatar': (user.first_name[0] + user.last_name[0]).upper() if user.first_name and user.last_name else user.username[0].upper(),
+                    'profile_picture': profile_pic_url,
                     'interests': list(profile.constraint_tags.values_list('name', flat=True)),
-                    'similarity': round(similarity * 100, 0)  # Convert to percentage
+                    'similarity': round(similarity * 100, 0),  # Convert to percentage
+                    'is_friend': is_friend
                 })
         except Exception as e:
             # Skip users with calculation errors

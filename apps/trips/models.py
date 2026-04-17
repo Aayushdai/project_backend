@@ -137,6 +137,22 @@ class TripReview(models.Model):
         return f"Review of {self.trip.title} by {self.reviewer.first_name}"
 
 
+class TripPhoto(models.Model):
+    """Stores photos uploaded by trip participants after trip completion"""
+    trip = models.ForeignKey(Trip, on_delete=models.CASCADE, related_name='photos')
+    uploaded_by = models.ForeignKey(UserProfile, on_delete=models.CASCADE, related_name='trip_photos')
+    image = models.ImageField(upload_to='trips/photos/')
+    caption = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Photo from {self.trip.title} by {self.uploaded_by.user.username}"
+
+
 class TripInvitation(models.Model):
     """Stores invitations sent to users for joining trips"""
     PENDING = 'pending'

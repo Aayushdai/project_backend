@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Trip, City, ItineraryItem, Destination, TripExpenseBudget
+from .models import Trip, City, ItineraryItem, Destination, TripExpenseBudget, TripReview, TripPhoto
 
 
 @admin.register(City)
@@ -39,5 +39,21 @@ class TripAdmin(admin.ModelAdmin):
 class TripExpenseBudgetAdmin(admin.ModelAdmin):
     list_display = ("trip", "category", "amount", "created_at")
     search_fields = ("trip__title", "category")
+    list_filter = ("trip", "created_at")
+    ordering = ("-created_at",)
+
+
+@admin.register(TripReview)
+class TripReviewAdmin(admin.ModelAdmin):
+    list_display = ("trip", "reviewer", "rating", "created_at")
+    search_fields = ("trip__title", "reviewer__user__username")
+    list_filter = ("trip", "rating", "created_at")
+    ordering = ("-created_at",)
+
+
+@admin.register(TripPhoto)
+class TripPhotoAdmin(admin.ModelAdmin):
+    list_display = ("trip", "uploaded_by", "created_at")
+    search_fields = ("trip__title", "uploaded_by__user__username")
     list_filter = ("trip", "created_at")
     ordering = ("-created_at",)

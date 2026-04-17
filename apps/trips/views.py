@@ -5,9 +5,9 @@ from django.contrib.auth.decorators import login_required
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.generics import ListAPIView
 from django.db.models import Q, Count, Case, When, IntegerField, F
-from .models import Trip, Destination, City, TripExpenseBudget, TripReview, TripInvitation, TripInviteLink, Notification
+from .models import Trip, Destination, City, TripExpenseBudget, TripReview, TripInvitation, TripInviteLink, Notification, TripPhoto
 from .forms import TripForm
-from .serializers import TripSerializer, DestinationSerializer, CitySerializer, TripExpenseBudgetSerializer, TripReviewSerializer, TripInvitationSerializer, TripInviteLinkSerializer, NotificationSerializer, RecommendedTripSerializer
+from .serializers import TripSerializer, DestinationSerializer, CitySerializer, TripExpenseBudgetSerializer, TripReviewSerializer, TripPhotoSerializer, TripInvitationSerializer, TripInviteLinkSerializer, NotificationSerializer, RecommendedTripSerializer
 from .recommendation import get_recommended_trips
 from django.http import JsonResponse
 from datetime import date, datetime, timedelta
@@ -353,6 +353,48 @@ class TripReviewDetailAPIView(generics.DestroyAPIView):
         if review.reviewer != self.request.user.userprofile:
             raise PermissionDenied("You can only delete your own review.")
         return review
+
+
+class TripPhotoListCreateAPIView(generics.ListCreateAPIView):
+    """API view for uploading and retrieving photos from a completed trip"""
+    serializer_class = TripPhotoSerializer
+    permission_classes = [permissions.IsAuthenticated, IsKYCApproved]
+    
+    def get_queryset(self):
+        """Get all photos for the specified trip"""
+        trip_id = self.kwargs.get('trip_id')
+        return TripPhoto.objects.filter(trip_id=trip_id)
+    
+    def perform_create(self, serializer):
+        """Create a photo, ensuring user is a participant of the trip"""
+        trip_id = self.kwargs.get('trip_id')
+        trip = get_object_or_404(Trip, id=trip_id)
+        user_profile = self.request.user.userprofile
+        
+        # Check if trip is completed
+        if not trip.is_completed:
+            raise PermissionDenied("Can only upload photos for completed trips.")
+        
+        # Check if user is a participant or creator
+        is_participant = user_profile in trip.participants.all() or trip.creator == user_profile
+        if not is_participant:
+            raise PermissionDenied("Only trip participants can upload photos.")
+        
+        serializer.save(trip=trip, uploaded_by=user_profile)
+
+
+class TripPhotoDetailAPIView(generics.DestroyAPIView):
+    """API view for deleting a photo. Only the uploader can delete their own photos."""
+    serializer_class = TripPhotoSerializer
+    permission_classes = [permissions.IsAuthenticated, IsKYCApproved]
+    queryset = TripPhoto.objects.all()
+
+    def get_object(self):
+        photo = super().get_object()
+        # Only allow deletion if user is the uploader
+        if photo.uploaded_by != self.request.user.userprofile:
+            raise PermissionDenied("You can only delete your own photos.")
+        return photo
 
 
 class JoinTripByInviteCodeAPIView(generics.GenericAPIView):

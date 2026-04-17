@@ -6,13 +6,14 @@ from .views import (
     JoinTripByInviteCodeAPIView, GenerateInviteLinkAPIView,
     TripInvitationListAPIView, TripInvitationDeleteAPIView, MyInvitationsListAPIView,
     RespondToInvitationAPIView, NotificationListAPIView, UnreadNotificationCountAPIView,
-    NotificationMarkAsReadAPIView, NotificationMarkAllAsReadAPIView, RecommendedTripsAPIView
+    NotificationMarkAsReadAPIView, NotificationMarkAllAsReadAPIView, RecommendedTripsAPIView, UserTripsAPIView
 )
 
 urlpatterns = [
     path('', TripListAPIView.as_view(), name='trip-list'),
     path('recommended/', RecommendedTripsAPIView.as_view(), name='recommended-trips'),
     path('history/', TripHistoryAPIView.as_view(), name='trip-history'),
+    path('user/<int:user_id>/', UserTripsAPIView.as_view(), name='user-trips'),
     path('join/<str:invite_code>/', JoinTripByInviteCodeAPIView.as_view(), name='join-trip-by-code'),
     path('notifications/', NotificationListAPIView.as_view(), name='notifications'),
     path('notifications/unread-count/', UnreadNotificationCountAPIView.as_view(), name='unread-count'),

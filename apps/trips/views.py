@@ -744,3 +744,27 @@ class RecommendedTripsAPIView(generics.ListAPIView):
             'count': len(recommended),
             'results': serializer.data
         })
+
+
+class UserTripsAPIView(generics.ListAPIView):
+    """Get all trips (completed and upcoming) for a specific user - for viewing their profile"""
+    serializer_class = TripSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        """Get all trips where the specified user is creator or participant"""
+        user_id = self.kwargs.get('user_id')
+        
+        # Get the user profile
+        from apps.users.models import UserProfile
+        try:
+            target_user = UserProfile.objects.get(id=user_id)
+        except UserProfile.DoesNotExist:
+            return Trip.objects.none()
+        
+        # Return all trips where this user is creator or participant (all dates)
+        trips = Trip.objects.filter(
+            Q(creator=target_user) | Q(participants=target_user)
+        ).distinct().order_by('-start_date')
+        
+        return trips

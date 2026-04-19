@@ -305,6 +305,7 @@ def me_view(request):
         "buddies_count":   0,
         "countries_count": 0,
         "rating":          None,
+        "security_questions": list(user.security_answers.questions_answers.keys()) if hasattr(user, 'security_answers') else [],
     })
 
 
@@ -696,6 +697,58 @@ def get_security_questions(request):
             "error": str(e),
             "message": "Failed to retrieve security questions. Please try again later."
         }, status=500)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def save_security_questions(request):
+    """Save or update user's security questions and answers"""
+    try:
+        security_questions = request.data.get("security_questions", {})
+        
+        # Validate input
+        if not security_questions or len(security_questions) == 0:
+            return Response({
+                "success": False,
+                "error": "Please select at least one security question"
+            }, status=400)
+        
+        # Validate all questions have answers
+        for q_id, answer in security_questions.items():
+            if not answer or not str(answer).strip():
+                return Response({
+                    "success": False,
+                    "error": "All selected questions must have answers"
+                }, status=400)
+        
+        # Hash the answers
+        from django.contrib.auth.hashers import make_password
+        from .models import UserSecurityAnswer
+        
+        hashed_answers = {}
+        for question_id_str, answer in security_questions.items():
+            normalized_answer = str(answer).strip().lower()
+            hashed_answers[question_id_str] = make_password(normalized_answer)
+        
+        # Create or update UserSecurityAnswer
+        security_obj, created = UserSecurityAnswer.objects.update_or_create(
+            user=request.user,
+            defaults={"questions_answers": hashed_answers}
+        )
+        
+        return Response({
+            "success": True,
+            "message": "Security questions updated successfully",
+            "created": created
+        }, status=201 if created else 200)
+        
+    except Exception as e:
+        print(f"Error saving security questions: {e}")
+        return Response({
+            "success": False,
+            "error": "An error occurred while saving security questions"
+        }, status=500)
+
 
 
 @csrf_exempt

@@ -1,0 +1,1 @@
+﻿import os; import django; os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'travel_companion.settings'); django.setup(); from apps.trips.models import ConstraintTag; tags = ConstraintTag.objects.all(); print(f'Count: {tags.count()}'); [print(t.name) for t in tags]

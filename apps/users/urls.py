@@ -29,6 +29,7 @@ urlpatterns = [
     path("me/change-password/", views.change_password_view, name="change-password"),
     path("me/delete/", views.delete_account_view, name="delete-account"),
     path("me/preferences/", views.user_preferences_view, name="user-preferences"),
+    path("me/security-questions/", views.save_security_questions, name="save-security-questions"),
     path("interests/", views.get_interests, name="get-interests"),
     path("constraint-tags/", views.get_constraint_tags, name="get-constraint-tags"),
     path("profile/update/", views.update_profile_view, name="profile-update"),

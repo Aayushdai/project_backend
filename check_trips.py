@@ -1,0 +1,1 @@
+﻿import os; import django; os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'travel_companion.settings'); django.setup(); from apps.trips.models import Trip; trips = Trip.objects.all(); print('---START---'); [print(f'Title: {t.title} | Trip Tags: {t.trip_tags} | Constraint Tags: {[ct.name for ct in t.constraint_tags.all()]}') for t in trips]; print('---END---')

@@ -586,7 +586,7 @@ class RespondToInvitationAPIView(generics.UpdateAPIView):
 class NotificationListAPIView(generics.ListAPIView):
     """Get all notifications for the current user (excluding old read notifications)"""
     serializer_class = NotificationSerializer
-    permission_classes = [permissions.IsAuthenticated, IsKYCApproved]
+    permission_classes = [permissions.IsAuthenticated]
     
     def get_queryset(self):
         """Get notifications for current user, excluding those read more than 24 hours ago"""
@@ -605,7 +605,7 @@ class NotificationListAPIView(generics.ListAPIView):
 
 class UnreadNotificationCountAPIView(generics.RetrieveAPIView):
     """Get count of unread notifications"""
-    permission_classes = [permissions.IsAuthenticated, IsKYCApproved]
+    permission_classes = [permissions.IsAuthenticated]
     
     def retrieve(self, request, *args, **kwargs):
         """Return count of unread notifications"""
@@ -620,7 +620,7 @@ class UnreadNotificationCountAPIView(generics.RetrieveAPIView):
 class NotificationMarkAsReadAPIView(generics.UpdateAPIView):
     """Mark a notification as read"""
     serializer_class = NotificationSerializer
-    permission_classes = [permissions.IsAuthenticated, IsKYCApproved]
+    permission_classes = [permissions.IsAuthenticated]
     queryset = Notification.objects.all()
     
     def patch(self, request, *args, **kwargs):

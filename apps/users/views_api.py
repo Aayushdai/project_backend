@@ -7,6 +7,8 @@ from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
 from django.contrib.auth.models import User
 from django.db.models import Q
+from django.utils import timezone
+from datetime import timedelta
 from apps.kyc.models import KYCProfile
 
 
@@ -172,6 +174,7 @@ def get_user_profile(request, user_id):
                 )
     
     profile_pic = profile.profile_picture.url if profile.profile_picture else None
+    interests = [{"id": i.id, "name": i.name, "category": i.category} for i in profile.interests.all()]
     
     return Response({
         "id": user.id,
@@ -189,6 +192,7 @@ def get_user_profile(request, user_id):
         "budget_level": profile.budget_level,
         "adventure_level": profile.adventure_level,
         "social_level": profile.social_level,
+        "interests": interests,
     })
 
 
@@ -576,6 +580,10 @@ def get_user_friends(request, user_id=None):
                 profile = None
             
             if profile:  # Only add if profile exists
+                # ✅ Use is_online field from profile, respecting privacy settings
+                show_online_status = profile.show_online_status
+                is_online = profile.is_online if show_online_status else False
+                
                 friends_data.append({
                     "id": profile.id,  # UserProfile ID (for messaging)
                     "user_id": friend_user.id,  # Also include User ID for reference
@@ -583,6 +591,9 @@ def get_user_friends(request, user_id=None):
                     "first_name": friend_user.first_name,
                     "last_name": friend_user.last_name,
                     "profile_picture": profile_pic,
+                    "last_login": friend_user.last_login,
+                    "is_online": is_online,
+                    "show_online_status": show_online_status,
                 })
                 friends_ids.add(friend_user.id)
     
@@ -598,6 +609,10 @@ def get_user_friends(request, user_id=None):
                 profile = None
             
             if profile:  # Only add if profile exists
+                # ✅ Use is_online field from profile, respecting privacy settings
+                show_online_status = profile.show_online_status
+                is_online = profile.is_online if show_online_status else False
+                
                 friends_data.append({
                     "id": profile.id,  # UserProfile ID (for messaging)
                     "user_id": friend_user.id,  # Also include User ID for reference
@@ -605,6 +620,9 @@ def get_user_friends(request, user_id=None):
                     "first_name": friend_user.first_name,
                     "last_name": friend_user.last_name,
                     "profile_picture": profile_pic,
+                    "last_login": friend_user.last_login,
+                    "is_online": is_online,
+                    "show_online_status": show_online_status,
                 })
                 friends_ids.add(friend_user.id)
     

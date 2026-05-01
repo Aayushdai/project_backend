@@ -4,7 +4,6 @@ from apps.trips.models import Trip
 from apps.kyc.models import KYCProfile
 from django.db.models import Q
 from datetime import date, timedelta
-from .models import Destination
 import matplotlib.pyplot as plt
 import matplotlib
 from io import BytesIO
@@ -264,16 +263,6 @@ admin.AdminSite.index = custom_index
 admin.site.site_header = "TCS Admin"
 admin.site.site_title = "TCS Admin"
 admin.site.index_title = "Welcome to TCS Admin"
-
-
-class DestinationAdmin(admin.ModelAdmin):
-    list_display = ("name", "country", "description")
-    search_fields = ("name", "country")
-    list_filter = ("country",)
-    ordering = ("name",)
-
-# Register the model
-admin.site.register(Destination, DestinationAdmin)
 
 
 def patch_admin_site():

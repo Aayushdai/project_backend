@@ -1,12 +1,10 @@
-from django.shortcuts import render, redirect, get_object_or_404
+from django.shortcuts import get_object_or_404
 from rest_framework import generics, permissions
 from rest_framework.response import Response
-from django.contrib.auth.decorators import login_required
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.generics import ListAPIView
 from django.db.models import Q, Count, Case, When, IntegerField, F
 from .models import Trip, Destination, City, TripExpenseBudget, TripReview, TripInvitation, TripInviteLink, Notification, TripPhoto
-from .forms import TripForm
 from .serializers import TripSerializer, DestinationSerializer, CitySerializer, TripExpenseBudgetSerializer, TripReviewSerializer, TripPhotoSerializer, TripInvitationSerializer, TripInviteLinkSerializer, NotificationSerializer, RecommendedTripSerializer
 from .recommendation import get_recommended_trips
 from django.http import JsonResponse
@@ -17,46 +15,6 @@ import logging
 import uuid
 
 logger = logging.getLogger(__name__)
-
-
-def kyc_required(view_func):
-    """Decorator to check if user has approved KYC status"""
-    def wrapper(request, *args, **kwargs):
-        if not request.user.is_authenticated:
-            return redirect('login')
-        try:
-            kyc_profile = request.user.kyc_profile
-            if kyc_profile.status != 'approved':
-                return redirect('kyc_form')  # Redirect to KYC form if not approved
-        except:
-            return redirect('kyc_form')  # Redirect to KYC form if no KYC profile
-        return view_func(request, *args, **kwargs)
-    return wrapper
-
-
-@login_required
-@kyc_required
-def create_trip(request):
-    if request.method == 'POST':
-        form = TripForm(request.POST)
-        if form.is_valid():
-            trip = form.save(commit=False)
-            trip.creator = request.user.userprofile
-            trip.save()
-            trip.participants.add(trip.creator)
-            return redirect('trip_detail', trip_id=trip.id)
-    else:
-        form = TripForm()
-    return render(request, 'trips/create.html', {'form': form})
-
-
-@login_required
-@kyc_required
-def trip_detail(request, trip_id):
-    trip = get_object_or_404(Trip, id=trip_id)
-    if not trip.is_public and request.user.userprofile != trip.creator:
-        return redirect('home')
-    return render(request, 'trips/details.html', {'trip': trip})
 
 
 class TripListAPIView(generics.ListCreateAPIView):
@@ -297,11 +255,6 @@ class DestinationDetailAPIView(generics.RetrieveAPIView):
     queryset = Destination.objects.select_related('city')
     serializer_class = DestinationSerializer
     lookup_field = 'id'
-
-
-def get_destinations(request):
-    destinations = list(Destination.objects.values())
-    return JsonResponse(destinations, safe=False)
 
 
 class TripReviewListCreateAPIView(generics.ListCreateAPIView):

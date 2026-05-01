@@ -104,6 +104,9 @@ class UserProfile(models.Model):
     searchable_by_email = models.BooleanField(default=True, help_text="Allow users to find you by email")
     show_online_status = models.BooleanField(default=True, help_text="Show when you're online")
     share_trip_activity = models.BooleanField(default=True, help_text="Share your trip activity with others")
+    
+    # ✅ Online Status
+    is_online = models.BooleanField(default=False, help_text="User's current online status")
 
     # ✅ Notification Preferences
     email_notifications = models.BooleanField(default=True, help_text="Receive email notifications")

@@ -1,10 +1,7 @@
-from django.shortcuts import render, get_object_or_404
-from django.contrib.auth.decorators import login_required
 from django.contrib.auth import authenticate, login
 from django.http import JsonResponse
 from django.utils import timezone
 from apps.users.models import UserProfile
-from apps.users.utils import find_similar_users
 from django.views.decorators.csrf import csrf_exempt
 from .models import UserLoginHistory, User
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -32,30 +29,6 @@ def validate_email_domain(email):
         return False, "Invalid email format"
 
 
-@login_required
-def profile_view(request, username):
-    profile = get_object_or_404(UserProfile, user__username=username)
-    return render(request, 'users/profile.html', {'profile': profile})
-
-
-@login_required
-def match_travel_buddies(request):
-    profile = request.user.userprofile
-    matches = find_similar_users(profile, limit=10, min_similarity=0.6)
-    context = {
-        'matches': [
-            {
-                'user': m[0].user,
-                'profile': m[0],
-                'similarity': m[1] * 100,
-            }
-            for m in matches
-        ],
-        'your_profile': profile,
-    }
-    return render(request, 'users/matches.html', context)
-
-
 @csrf_exempt
 def frontend_login(request):
     if request.method != "POST":
@@ -77,6 +50,14 @@ def frontend_login(request):
     # Update last_login timestamp
     user.last_login = timezone.now()
     user.save(update_fields=['last_login'])
+    
+    # ✅ Set user as online
+    try:
+        profile = user.userprofile
+        profile.is_online = True
+        profile.save(update_fields=['is_online'])
+    except UserProfile.DoesNotExist:
+        pass
     
     refresh = RefreshToken.for_user(user)
     access  = str(refresh.access_token)
@@ -282,6 +263,13 @@ def me_view(request):
     except:
         kyc_status = 'not_submitted'
     
+    # Get interests and constraint tags
+    interests = []
+    constraint_tags = []
+    if profile:
+        interests = [{"id": i.id, "name": i.name, "category": i.category} for i in profile.interests.all()]
+        constraint_tags = [{"id": t.id, "name": t.name, "category": t.category} for t in profile.constraint_tags.all()]
+    
     return Response({
         "id":          profile.id if profile else user.id,  # ✅ Return UserProfile ID, not User ID
         "user_id":     user.id,  # Also provide User ID if needed
@@ -301,6 +289,8 @@ def me_view(request):
         "budget_level":             profile.budget_level            if profile else 5,
         "adventure_level":          profile.adventure_level         if profile else 5,
         "social_level":             profile.social_level            if profile else 5,
+        "interests":                interests,
+        "constraint_tags":          constraint_tags,
         "trips_count":     0,
         "buddies_count":   0,
         "countries_count": 0,
@@ -330,11 +320,31 @@ def update_profile_view(request):
     if "accommodation_preference" in request.data:
         profile.accomodation_preference = request.data["accommodation_preference"]
 
-    # ✅ Handle interests
+    # ✅ Handle interests - FormData sends as JSON array string
+    interest_ids = []
+    
     if "interest_ids" in request.data:
-        interest_ids = request.data.get("interest_ids", [])
-        if isinstance(interest_ids, list):
+        try:
+            ids_data = request.data.get("interest_ids", "[]")
+            # Parse JSON string if it's a string
+            if isinstance(ids_data, str):
+                interest_ids = json.loads(ids_data)
+            elif isinstance(ids_data, list):
+                interest_ids = ids_data
+            
+            # Convert all to int and filter
+            interest_ids = [int(i) for i in interest_ids if str(i).isdigit()]
+        except (ValueError, TypeError, json.JSONDecodeError) as e:
+            print(f"⚠️ Error parsing interest_ids: {e}")
+            interest_ids = []
+    
+    if interest_ids:
+        print(f"✅ Setting interests for {user.username}: {interest_ids}")
+        try:
             profile.interests.set(interest_ids)
+        except Exception as e:
+            print(f"❌ Error setting interests: {e}")
+            return Response({"message": f"Error saving interests: {str(e)}"}, status=400)
 
     # ✅ Handle constraint tags
     if "constraint_tag_ids" in request.data:
@@ -354,7 +364,7 @@ def update_profile_view(request):
     profile.save()
 
     pic = request.build_absolute_uri(profile.profile_picture.url) if profile.profile_picture else None
-    interests = [{"id": i.id, "name": i.name} for i in profile.interests.all()]
+    interests = [{"id": i.id, "name": i.name, "category": i.category} for i in profile.interests.all()]
     constraint_tags = [{"id": t.id, "name": t.name, "category": t.category} for t in profile.constraint_tags.all()]
     return Response({
         "message":      "Updated.",
@@ -556,12 +566,18 @@ def delete_account_view(request):
 def logout_view(request):
     """
     Logout endpoint
-    Clears the refresh token and logs the logout event
+    Sets user's online status to False and logs the logout event
     Frontend will clear the access token from localStorage
     """
     try:
-        # Log the logout event if needed
-        # Could add: LogEntry.objects.create(user=request.user, action='logout')
+        # ✅ Set user as offline
+        if request.user.is_authenticated:
+            try:
+                profile = request.user.userprofile
+                profile.is_online = False
+                profile.save(update_fields=['is_online'])
+            except UserProfile.DoesNotExist:
+                pass
         
         return Response({
             "success": True,

@@ -3,7 +3,7 @@ from .views import (
     TripListAPIView, TripDetailAPIView, DestinationListAPIView, DestinationDetailAPIView, 
     CityListAPIView, TripHistoryAPIView, TripExpenseBudgetListAPIView, TripExpenseBudgetDetailAPIView,
     TripReviewListCreateAPIView, TripReviewDetailAPIView, TripPhotoListCreateAPIView, TripPhotoDetailAPIView,
-    JoinTripByInviteCodeAPIView, GenerateInviteLinkAPIView,
+    JoinTripByInviteCodeAPIView, GenerateInviteLinkAPIView, JoinTripAPIView, LeaveTripAPIView,
     TripInvitationListAPIView, TripInvitationDeleteAPIView, MyInvitationsListAPIView,
     RespondToInvitationAPIView, NotificationListAPIView, UnreadNotificationCountAPIView,
     NotificationMarkAsReadAPIView, NotificationMarkAllAsReadAPIView, RecommendedTripsAPIView, UserTripsAPIView
@@ -15,6 +15,8 @@ urlpatterns = [
     path('history/', TripHistoryAPIView.as_view(), name='trip-history'),
     path('user/<int:user_id>/', UserTripsAPIView.as_view(), name='user-trips'),
     path('join/<str:invite_code>/', JoinTripByInviteCodeAPIView.as_view(), name='join-trip-by-code'),
+    path('<int:trip_id>/join/', JoinTripAPIView.as_view(), name='join-trip'),
+    path('<int:trip_id>/leave/', LeaveTripAPIView.as_view(), name='leave-trip'),
     path('notifications/', NotificationListAPIView.as_view(), name='notifications'),
     path('notifications/unread-count/', UnreadNotificationCountAPIView.as_view(), name='unread-count'),
     path('notifications/read-all/', NotificationMarkAllAsReadAPIView.as_view(), name='read-all-notifications'),

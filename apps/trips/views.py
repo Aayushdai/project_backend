@@ -394,6 +394,106 @@ class JoinTripByInviteCodeAPIView(generics.GenericAPIView):
         )
 
 
+class JoinTripAPIView(generics.GenericAPIView):
+    """API view to join a trip directly"""
+    permission_classes = [permissions.IsAuthenticated, IsKYCApproved]
+    serializer_class = TripSerializer
+    
+    def post(self, request, trip_id):
+        """Join a trip directly"""
+        trip = get_object_or_404(Trip, id=trip_id)
+        
+        # Check if trip is completed
+        if trip.is_completed:
+            return Response(
+                {"error": "This trip has already been completed. Cannot join completed trips."},
+                status=400
+            )
+        
+        # Check if trip is in the past
+        if trip.is_trip_ended:
+            return Response(
+                {"error": "This trip has already ended. Cannot join past trips."},
+                status=400
+            )
+        
+        user_profile = request.user.userprofile
+        
+        # Check if already a participant
+        if trip.participants.filter(id=user_profile.id).exists():
+            return Response(
+                {"message": "You are already a participant of this trip."},
+                status=200,
+                data=TripSerializer(trip).data
+            )
+        
+        # Check if trip is private and user is not invited
+        if not trip.is_public:
+            # Check if there's an active invitation or invite link for this user
+            has_invite = TripInvitation.objects.filter(
+                trip=trip,
+                invited_user=user_profile,
+                status='pending'
+            ).exists()
+            
+            has_link = TripInviteLink.objects.filter(trip=trip).exists()
+            
+            if not has_invite and not has_link:
+                return Response(
+                    {"error": "You do not have permission to join this private trip."},
+                    status=403
+                )
+        
+        # Add user as participant
+        trip.participants.add(user_profile)
+        
+        return Response(
+            {
+                "message": f"Successfully joined trip: {trip.title}",
+                "trip": TripSerializer(trip).data
+            },
+            status=200
+        )
+
+
+class LeaveTripAPIView(generics.GenericAPIView):
+    """API view to leave a trip"""
+    permission_classes = [permissions.IsAuthenticated, IsKYCApproved]
+    serializer_class = TripSerializer
+    
+    def post(self, request, trip_id):
+        """Leave a trip"""
+        trip = get_object_or_404(Trip, id=trip_id)
+        
+        user_profile = request.user.userprofile
+        
+        # Prevent creator from leaving their own trip
+        if trip.creator == user_profile:
+            return Response(
+                {"error": "Trip creator cannot leave their own trip. Please delete the trip instead."},
+                status=400
+            )
+        
+        # Check if user is a participant
+        if not trip.participants.filter(id=user_profile.id).exists():
+            return Response(
+                {"message": "You are not a participant of this trip."},
+                status=200,
+                data=TripSerializer(trip).data
+            )
+        
+        # Remove user from participants
+        trip.participants.remove(user_profile)
+        
+        return Response(
+            {
+                "message": f"Successfully left trip: {trip.title}",
+                "trip": TripSerializer(trip).data
+            },
+            status=200
+        )
+
+
 class GenerateInviteLinkAPIView(generics.CreateAPIView):
     """Generate a shareable invite link for a trip"""
     serializer_class = TripInviteLinkSerializer

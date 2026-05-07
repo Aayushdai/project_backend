@@ -45,7 +45,6 @@ HARD_CONSTRAINT_CATEGORIES = {
 }
 
 
-
 # ============================================================================
 # TAG NORMALIZATION
 # ============================================================================
@@ -176,8 +175,6 @@ def calculate_cosine_similarity(vector1, vector2):
     return round(cosine_sim, 4)
 
 
-
-
 # ============================================================================
 # HARD CONSTRAINT CHECKING
 # ============================================================================
@@ -275,8 +272,6 @@ def check_hard_constraint_compatibility(user_profile, target_profile, debug=Fals
         print(f"  Is compatible: {is_compatible}")
     
     return is_compatible, penalty
-
-
 
 
 # ============================================================================
@@ -412,8 +407,6 @@ def calculate_member_compatibility(user_profile, member_profile, debug=False):
     return final_score, debug_info
 
 
-
-
 # ============================================================================
 # TRIP COMPATIBILITY CALCULATION
 # ============================================================================
@@ -486,7 +479,7 @@ def calculate_trip_compatibility(trip, user_profile, debug=False):
 # RECOMMENDED TRIPS RANKING
 # ============================================================================
 
-def get_recommended_trips_v2(user_profile, trips_queryset=None, destination=None, limit=None, debug=False):
+def get_recommended_trips_v3(user_profile, trips_queryset=None, destination=None, limit=None, debug=False):
     """
     Get trips ranked by realistic compatibility scoring
     
@@ -541,8 +534,6 @@ def get_recommended_trips_v2(user_profile, trips_queryset=None, destination=None
     return scored_trips
 
 
-
-
 # ============================================================================
 # SCORE INTERPRETATION THRESHOLDS
 # ============================================================================
@@ -572,5 +563,5 @@ def get_match_color_and_label(score):
 # ============================================================================
 
 def get_recommended_trips(user_profile, trips_queryset=None, destination=None, limit=None):
-    """Wrapper for backwards compatibility - calls V2 implementation"""
-    return get_recommended_trips_v2(user_profile, trips_queryset, destination, limit, debug=False)
+    """Wrapper for backwards compatibility - calls V3 implementation"""
+    return get_recommended_trips_v3(user_profile, trips_queryset, destination, limit, debug=False)

@@ -55,13 +55,19 @@ class TripSerializer(serializers.ModelSerializer):
     trip_tags = serializers.JSONField(required=False, default=list)
     total_expense = serializers.SerializerMethodField()
 
+    is_trip_ended = serializers.SerializerMethodField()
+
     class Meta:
         model = Trip
         fields = [
             'id', 'title', 'destination', 'destination_id', 'start_date', 'end_date',
             'description', 'cover_image', 'creator', 'participants', 'constraint_tags', 'constraint_tag_ids',
-            'trip_tags', 'is_public', 'is_completed', 'invite_code', 'created_at', 'updated_at', 'itinerary', 'expense_budgets', 'total_expense'
+            'trip_tags', 'is_public', 'is_completed', 'is_trip_ended', 'invite_code', 'created_at', 'updated_at', 'itinerary', 'expense_budgets', 'total_expense'
         ]
+    
+    def get_is_trip_ended(self, obj):
+        """Check if trip end date has passed"""
+        return obj.is_trip_ended
 
     def get_total_expense(self, obj):
         """Calculate and return total expense amount"""

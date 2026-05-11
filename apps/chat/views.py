@@ -6,9 +6,22 @@ from django.db.models import Q
 from django.utils import timezone
 from datetime import timedelta
 from .models import ChatMessage, Message
-from apps.users.models import UserProfile
+from apps.users.models import UserProfile, FriendRequest
 from apps.trips.models import City, Destination
 from apps.kyc.permissions import IsKYCApproved
+
+
+def are_friends(user_a, user_b):
+    """Return True when two Django users have an accepted friend request."""
+    return FriendRequest.objects.filter(status='accepted').filter(
+        Q(from_user=user_a, to_user=user_b) |
+        Q(from_user=user_b, to_user=user_a)
+    ).exists()
+
+
+def can_access_trip_chat(user_profile, trip):
+    """Trip chat is visible to the creator and joined participants only."""
+    return trip.creator_id == user_profile.id or trip.participants.filter(id=user_profile.id).exists()
 
 
 class ChatMessageSerializer(serializers.ModelSerializer):
@@ -352,6 +365,12 @@ class MessageViewSet(viewsets.ModelViewSet):
                         {'error': 'Receiver not found'},
                         status=status.HTTP_404_NOT_FOUND
                     )
+
+                if not are_friends(request.user, receiver.user):
+                    return Response(
+                        {'error': 'You can only send direct messages to friends'},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
                 
                 message = Message.objects.create(
                     sender=sender_profile,
@@ -368,10 +387,18 @@ class MessageViewSet(viewsets.ModelViewSet):
                     logger.info(f"Looking for trip with ID: {trip_id}")
                     trip = Trip.objects.get(id=trip_id)
                     logger.info(f"Trip found: {trip}")
-                    # Check if user is a member of the trip
-                    is_member = sender_profile in trip.participants.all()
-                    logger.info(f"Is sender member of trip: {is_member}")
-                    if not is_member:
+                    
+                    # ✅ Check if trip has ended
+                    if trip.is_trip_ended:
+                        logger.warning(f"User {sender_profile} attempted to message ended trip {trip}")
+                        return Response(
+                            {'error': 'Cannot send messages to ended trips'},
+                            status=status.HTTP_403_FORBIDDEN
+                        )
+                    
+                    can_access = can_access_trip_chat(sender_profile, trip)
+                    logger.info(f"Can sender access trip chat: {can_access}")
+                    if not can_access:
                         logger.warning(f"User {sender_profile} is not member of trip {trip}")
                         return Response(
                             {'error': 'You are not a member of this trip'},
@@ -437,6 +464,12 @@ class MessageViewSet(viewsets.ModelViewSet):
             )
         
         user_profile = UserProfile.objects.get(user=request.user)
+
+        if not are_friends(request.user, recipient.user):
+            return Response(
+                {'error': 'You can only view direct messages with friends'},
+                status=status.HTTP_403_FORBIDDEN
+            )
         
         # Get all messages between these two users
         messages = Message.objects.filter(
@@ -473,6 +506,13 @@ class MessageViewSet(viewsets.ModelViewSet):
             return Response(
                 {'error': f'Trip not found: {str(e)}'},
                 status=status.HTTP_404_NOT_FOUND
+            )
+
+        user_profile = UserProfile.objects.get(user=request.user)
+        if not can_access_trip_chat(user_profile, trip):
+            return Response(
+                {'error': 'You are not a member of this trip'},
+                status=status.HTTP_403_FORBIDDEN
             )
         
         # Get all messages for this trip

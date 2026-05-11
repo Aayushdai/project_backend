@@ -103,6 +103,7 @@ def search_users(request):
     results = []
     for user in users:
         profile_pic = None
+        location = ""
         try:
             profile = user.userprofile
             
@@ -120,6 +121,7 @@ def search_users(request):
             
             if profile.profile_picture:
                 profile_pic = profile.profile_picture.url
+            location = profile.location
         except UserProfile.DoesNotExist:
             pass
         
@@ -129,7 +131,7 @@ def search_users(request):
             "first_name": user.first_name,
             "last_name": user.last_name,
             "profile_picture": profile_pic,
-            "location": profile.location if 'profile' in locals() else ""
+            "location": location
         })
     
     return Response({"results": results})
@@ -178,11 +180,62 @@ def get_user_profile(request, user_id):
     
     return Response({
         "id": user.id,
+        "profile_id": profile.id,
         "username": user.username,
         "first_name": user.first_name,
         "last_name": user.last_name,
         "email": user.email,
         "profile_picture": profile_pic,
+        "bio": profile.bio,
+        "location": profile.location,
+        "preferred_destinations": profile.preferred_destinations,
+        "travel_style": profile.travel_style,
+        "pace": profile.pace,
+        "accomodation_preference": profile.accomodation_preference,
+        "budget_level": profile.budget_level,
+        "adventure_level": profile.adventure_level,
+        "social_level": profile.social_level,
+        "interests": interests,
+    })
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_user_profile_by_username(request, username):
+    """Get public profile details by username without relying on search results."""
+    try:
+        user = User.objects.get(username=username)
+        profile = user.userprofile
+    except (User.DoesNotExist, UserProfile.DoesNotExist):
+        return Response({"detail": "User profile not found"}, status=404)
+
+    profile_pic = profile.profile_picture.url if profile.profile_picture else None
+    basic_data = {
+        "id": user.id,
+        "profile_id": profile.id,
+        "username": user.username,
+        "first_name": user.first_name,
+        "last_name": user.last_name,
+        "profile_picture": profile_pic,
+    }
+
+    if not profile.public_profile and request.user.id != user.id:
+        is_friend = FriendRequest.objects.filter(status='accepted').filter(
+            Q(from_user=request.user, to_user=user) |
+            Q(from_user=user, to_user=request.user)
+        ).exists()
+
+        if not is_friend:
+            return Response({
+                **basic_data,
+                "detail": "This profile is private. You must be a friend to view it."
+            }, status=403)
+
+    interests = [{"id": i.id, "name": i.name, "category": i.category} for i in profile.interests.all()]
+
+    return Response({
+        **basic_data,
+        "email": user.email,
         "bio": profile.bio,
         "location": profile.location,
         "preferred_destinations": profile.preferred_destinations,
@@ -223,11 +276,14 @@ def trip_user_suggestions(request):
     Based on similarity scores, excludes current user, trip members, and already invited users.
     
     Query params:
-    - trip_id: Trip ID to get suggestions for
+    - trip_id: Trip ID to get suggestions for (required)
+    - q: Optional search query to filter by name or interests (partial matching, case-insensitive)
     """
     from apps.trips.models import Trip, TripInvitation
     
     trip_id = request.query_params.get('trip_id')
+    search_query = request.query_params.get('q', '').strip()
+    
     if not trip_id:
         return Response({"detail": "trip_id parameter required"}, status=400)
     
@@ -258,6 +314,15 @@ def trip_user_suggestions(request):
         id__in=trip_members | invited_users | {current_profile.id}
     )
     
+    # If search query provided, filter by name/interests
+    if search_query and len(search_query) >= 2:
+        all_profiles = all_profiles.filter(
+            Q(user__username__icontains=search_query) |
+            Q(user__first_name__icontains=search_query) |
+            Q(user__last_name__icontains=search_query) |
+            Q(constraint_tags__name__icontains=search_query)
+        ).distinct()
+    
     # Calculate similarity for each user
     from .utils import calculate_user_similarity
     
@@ -278,8 +343,9 @@ def trip_user_suggestions(request):
             
             similarity = calculate_user_similarity(current_profile, profile)
             
-            # Only suggest users with > 0.3 (30%) similarity
-            if similarity > 0.3:
+            # When searching: include all matches regardless of similarity
+            # When not searching: only suggest users with > 0.3 (30%) similarity
+            if search_query or similarity > 0.3:
                 user = profile.user
                 # Get profile picture URL
                 profile_pic_url = None
@@ -300,8 +366,16 @@ def trip_user_suggestions(request):
             # Skip users with calculation errors
             continue
     
-    # Sort by similarity descending
-    suggestions.sort(key=lambda x: x['similarity'], reverse=True)
+    # Sort results
+    if search_query:
+        # When searching: prioritize name matches, then friends, then similarity
+        suggestions.sort(key=lambda x: (
+            not x['is_friend'],  # Friends first (False < True)
+            -x['similarity']  # Then by similarity descending
+        ))
+    else:
+        # Normal mode: sort by similarity descending
+        suggestions.sort(key=lambda x: x['similarity'], reverse=True)
     
     # Limit to top 10
     return Response(suggestions[:10])

@@ -291,6 +291,8 @@ def me_view(request):
         "social_level":             profile.social_level            if profile else 5,
         "interests":                interests,
         "constraint_tags":          constraint_tags,
+        "gender":                   profile.gender                  if profile else "",
+        "dob":                      profile.dob                     if profile else None,
         "trips_count":     0,
         "buddies_count":   0,
         "countries_count": 0,
@@ -346,11 +348,30 @@ def update_profile_view(request):
             print(f"❌ Error setting interests: {e}")
             return Response({"message": f"Error saving interests: {str(e)}"}, status=400)
 
-    # ✅ Handle constraint tags
+    # ✅ Handle constraint tags - FormData sends as JSON array string
+    constraint_tag_ids = []
     if "constraint_tag_ids" in request.data:
-        constraint_tag_ids = request.data.get("constraint_tag_ids", [])
-        if isinstance(constraint_tag_ids, list):
+        try:
+            ids_data = request.data.get("constraint_tag_ids", "[]")
+            # Parse JSON string if it's a string
+            if isinstance(ids_data, str):
+                constraint_tag_ids = json.loads(ids_data)
+            elif isinstance(ids_data, list):
+                constraint_tag_ids = ids_data
+            
+            # Convert all to int and filter
+            constraint_tag_ids = [int(i) for i in constraint_tag_ids if str(i).isdigit()]
+        except (ValueError, TypeError, json.JSONDecodeError) as e:
+            print(f"⚠️ Error parsing constraint_tag_ids: {e}")
+            constraint_tag_ids = []
+    
+    if constraint_tag_ids:
+        print(f"✅ Setting constraint tags for {user.username}: {constraint_tag_ids}")
+        try:
             profile.constraint_tags.set(constraint_tag_ids)
+        except Exception as e:
+            print(f"❌ Error setting constraint tags: {e}")
+            return Response({"message": f"Error saving constraint tags: {str(e)}"}, status=400)
 
     # ✅ Handle age preferences
     if "min_match_age" in request.data:

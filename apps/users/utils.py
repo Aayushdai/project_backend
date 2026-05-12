@@ -85,6 +85,11 @@ def user_profile_to_vector(profile):
     """
     Convert user profile to a feature vector for cosine similarity.
     Includes: travel style, pace, accommodation, scores, destinations, interests, and constraint tags.
+    
+    ✅ WEIGHTED FEATURES:
+    - Constraint tags (absolute tags) = 2x weight (higher priority for lifestyle compatibility)
+    - Interests (soft matching) = 1x weight
+    - Travel preferences & scores = 1x weight
     """
     # Categorical -> One-hot
     travel_style_map = {'budget': 0, 'luxury': 1, 'adventure': 2}
@@ -112,18 +117,21 @@ def user_profile_to_vector(profile):
             if kw in dest:
                 dest_vector[i] = 1
 
-    # Interests vector (binary encoding)
+    # Interests vector (binary encoding) - 1x weight
     all_interests = Interest.objects.all().order_by('id')
     user_interests = set(profile.interests.values_list('id', flat=True))
     interests_vector = [1 if interest.id in user_interests else 0 for interest in all_interests]
 
-    # ✅ Constraint Tags vector (binary encoding)
+    # ✅ Constraint Tags vector (binary encoding) - 2x weight (absolute tags get higher priority)
     all_tags = ConstraintTag.objects.all().order_by('id')
     user_tags = set(profile.constraint_tags.values_list('id', flat=True))
     tags_vector = [1 if tag.id in user_tags else 0 for tag in all_tags]
+    
+    # ✅ WEIGHT BOOST: Duplicate constraint tags to give them 2x weight in cosine similarity
+    weighted_tags_vector = tags_vector + tags_vector
 
-    # Combining everything: cats + nums + dest + interests + tags
-    vector = np.array(cats + nums + dest_vector + interests_vector + tags_vector, dtype=float)
+    # Combining everything: cats + nums + dest + interests + weighted_tags
+    vector = np.array(cats + nums + dest_vector + interests_vector + weighted_tags_vector, dtype=float)
 
     # Scaling numerical features (0-1)
     scaler = MinMaxScaler(feature_range=(0, 1))
